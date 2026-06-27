@@ -8,9 +8,10 @@ core.
 
 > **Status: early but real.** The RISC-V core boots and runs RV32IMAC + Zba/Zbb/Zbs/Zcb code and
 > passes a verified instruction-correctness suite. The RP2350 peripheral layer is now multi-chip
-> parameterized (`tsc` is clean and the chip boots its A2 bootrom + a real RISC-V firmware — the
-> `blink_simple` integration test passes). 346 tests pass; two deeper firmware-integration cases
-> remain skipped (timing / PIO fidelity) — see **[ROADMAP.md](./ROADMAP.md)**.
+> parameterized (`tsc` is clean), and the chip boots its A2 bootrom and runs real RISC-V firmware:
+> the **`blink_simple`** and **`hello_timer`** integration tests pass (the latter is a 250M-step run
+> driven by RP2350 timer interrupts). 347 tests pass; one firmware case (`pio_blink`) remains skipped
+> pending the RP2350 PIO feature port — see **[ROADMAP.md](./ROADMAP.md)**.
 
 ## Lineage & credit
 
@@ -33,20 +34,31 @@ independently verified) surfaced 19 confirmed defects. We fixed them, each with 
   `mtvec + ilen`) — would break a FreeRTOS `portYIELD`. Fixed.
 - **Hazard3 external IRQ 0** (TIMER0_IRQ_0) was never delivered (NOIRQ tested via `irq==0` instead
   of the `meinext` sign bit). Fixed.
-- `SLTIU` immediate sign-extension, `JALR` LSB masking, `CSRRC` write gating, warm-reset PC,
-  `mip.MEIP` preemption gating, the trap-entry `mstatus` update, and the **Zcb** compressed
-  instructions the RP2350 bootrom needs.
+- `SLTIU` immediate sign-extension, `JALR` LSB masking, `CSRRC` write gating, warm-reset PC, the
+  trap-entry `mstatus` update, and the **Zcb** compressed instructions the RP2350 bootrom needs.
 
-Every fix has a regression test in
+Two further trap bugs were found by **lockstepping this engine against c1570's** (which runs the
+firmware) and bisecting the first divergence — these are what make a full firmware run work, not just
+the unit suite:
+
+- **`MEINEXT` reset value.** It must reset to NOIRQ; a zeroed `MEINEXT` reads as "IRQ 0 pending", so
+  the IRQ-0 gate above took a *phantom* IRQ 0 the instant firmware enabled interrupts. (This was the
+  `hello_timer` stall.)
+- **MTVEC mode bits.** Trap targets must mask `mtvec[1:0]`; a vectored mtvec (RP2350 firmware sets
+  `0x20000001`) otherwise sends an exception to an odd address and crashes. (This was the `pio_blink`
+  crash.)
+
+Most fixes have a regression test in
 [`src/riscv/test/cpu-fixes.spec.ts`](./src/riscv/test/cpu-fixes.spec.ts), each **proven to fail on
-the pre-fix engine** (negative control). The illegal-instruction `throw` is kept deliberately as a
+the pre-fix engine** (negative control); the two trap fixes above are covered by the `hello_timer`
+firmware-integration test. The illegal-instruction `throw` is kept deliberately as a
 debug aid rather than silently trapping `mcause=2`.
 
 ## Quick start
 
 ```bash
 npm install
-npm test       # 346 pass, 2 skipped (deeper chip-level integration; see ROADMAP)
+npm test       # 347 pass, 1 skipped (pio_blink; see ROADMAP). hello_timer takes ~22s.
 ```
 
 The RISC-V correctness suite alone:

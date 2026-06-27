@@ -49,17 +49,29 @@ The **`blink_simple`** integration test now passes (RP2350 boots its A2 bootrom,
 firmware, drives GPIO via SIO). The RESETS `reset_mask` fix was the boot-blocker: the bootrom
 de-asserts a high-numbered reset block and spins on `RESET_DONE` for it.
 
-## Next — remaining RP2350 fidelity (two skipped integration tests)
+## Done — two RISC-V core trap bugs (`hello_timer` now passes)
 
-- **`hello_timer`** — the RP2350 TIMER interrupt now fires correctly (offset + IRQ parameterization
-  works; 0 → working repeats, with 5 clean fires + deliveries traced; the clock advances fine, so it
-  is **not** an idle/clock issue). It stalls after ~4 iterations for a **multicore** reason: this
-  firmware runs on both RISC-V cores and coordinates through the SIO inter-core FIFO, and a
-  read-on-empty (`ROE`) state — sensitive to how `stepCores()` interleaves core0/core1 — diverts the
-  handler away from re-arming the alarm. Needs multicore-timing fidelity (lockstep / FIFO ordering),
-  and a faster test harness (the 250M-step loop runs ~20 s+).
-- **`pio_blink`** — needs RP2350 PIO **GPIOBASE** modelling (the firmware drives GPIO32, outside the
-  low 32-pin window) plus an unresolved misaligned-PC fault early in this firmware.
+Lockstepping this engine against c1570's original (which passes both firmware tests) and bisecting
+the first architectural divergence surfaced two real core bugs:
+
+| Bug | Symptom | Fix |
+|---|---|---|
+| `MEINEXT` reset value was 0 | reads as "IRQ 0, NOIRQ clear"; the `!NOIRQ` gate took a phantom IRQ 0 the moment interrupts were enabled, corrupting the stack — this stalled `hello_timer` | reset `MEINEXT` to NOIRQ (index 0 still deliverable) |
+| trap target used raw `mtvec` | exceptions/direct interrupts must go to `mtvec & ~3`; a vectored mtvec (RP2350 = `0x20000001`) sent an `EBREAK` to odd `0x20000001` → crash | mask the MTVEC mode bits → BASE |
+
+`hello_timer` is now **un-skipped and passing** (250M-step run, exactly 19 timer-driven prints). The
+phantom-IRQ fix also confirms the earlier `!NOIRQ` IRQ-0 gate is correct *given a correct reset*.
+
+## Next — `pio_blink` (the last skipped integration test)
+
+Its early crash is fixed (the MTVEC mask above). What remains is the **RP2350-specific PIO feature
+set**, which c1570 implemented and upstream lacks — port it from his `pio.ts`:
+
+- **GPIOBASE register** (`0x168`, `gpiobase = value & 16`) — moves the PIO's 32-pin window so it can
+  drive GPIO32; also a `getPinValue`/`pinValuesChanged`/`checkChangedPins` index offset.
+- **32-bit pin mask** for RP2350 (upstream hardcodes the RP2040 `0x3fffffff` 30-bit mask).
+- **`IN_COUNT`** masking and the RP2350 **PIO IRQ-index mode** (`resolveIrqTarget`), plus the
+  neighbour state-machine synchronous restart.
 
 Each peripheral's parameterization is also a natural **upstream PR to wokwi/rp2040js** ("make the
 peripheral layer multi-chip"), see below.
