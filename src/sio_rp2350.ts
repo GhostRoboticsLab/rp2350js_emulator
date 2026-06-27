@@ -1,6 +1,6 @@
-import { IRPChip } from './rpchip';
-import { Core } from './core';
-import { RPSIOCore } from './sio-core';
+import { IRPChip } from './rpchip.js';
+import { Core } from './core.js';
+import { RPSIOCore } from './sio-core.js';
 
 const CPUID = 0x000;
 

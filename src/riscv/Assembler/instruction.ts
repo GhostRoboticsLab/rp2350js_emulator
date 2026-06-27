@@ -1,4 +1,4 @@
-import { getBit, getRange, setRange, signExtend } from "../binaryFunctions";
+import { getBit, getRange, setRange, signExtend } from "../binaryFunctions.js";
 
 export abstract class Instruction {
 

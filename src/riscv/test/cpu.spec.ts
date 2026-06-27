@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
-import { Assembler } from "../Assembler/assembler";
-import { RegisterSet } from "../cpu";
-import { RP2350 } from "../../rp2350";
+import { Assembler } from "../Assembler/assembler.js";
+import { RegisterSet } from "../cpu.js";
+import { RP2350 } from "../../rp2350.js";
 
 describe('Testing RegisterSet class:', () => {
   test('Set x1 to 5', () => {

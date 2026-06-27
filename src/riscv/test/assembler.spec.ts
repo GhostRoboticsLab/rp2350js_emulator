@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { Assembler } from "../Assembler/assembler";
+import { Assembler } from "../Assembler/assembler.js";
 
 describe('Testing assembleLine function:', () => {
   test('Input: addi, x17, x0, 93', () => {

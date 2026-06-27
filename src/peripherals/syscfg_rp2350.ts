@@ -1,5 +1,5 @@
-import { RP2350 } from '../rp2350';
-import { BasePeripheral, Peripheral } from './peripheral';
+import { RP2350 } from '../rp2350.js';
+import { BasePeripheral, Peripheral } from './peripheral.js';
 
 export class RP2350SysCfg extends BasePeripheral implements Peripheral {
   readUint32(offset: number) {

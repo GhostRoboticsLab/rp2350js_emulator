@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createTestDriver } from '../../test-utils/create-test-driver';
-import { ICortexTestDriver } from '../../test-utils/test-driver';
-import { RP2040TestDriver } from '../../test-utils/test-driver-rp2040';
+import { createTestDriver } from '../../test-utils/create-test-driver.js';
+import { ICortexTestDriver } from '../../test-utils/test-driver.js';
+import { RP2040TestDriver } from '../../test-utils/test-driver-rp2040.js';
 
 describe('PWM', () => {
   let cpu: ICortexTestDriver;

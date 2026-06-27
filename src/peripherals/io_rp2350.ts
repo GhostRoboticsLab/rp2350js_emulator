@@ -1,5 +1,5 @@
-import { IRPChip } from '../rpchip';
-import { BasePeripheral, Peripheral } from './peripheral';
+import { IRPChip } from '../rpchip.js';
+import { BasePeripheral, Peripheral } from './peripheral.js';
 
 const GPIO_CTRL_LAST = 0x17c;
 const INTR0 = 0x230;

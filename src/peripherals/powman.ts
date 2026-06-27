@@ -1,4 +1,4 @@
-import { BasePeripheral, Peripheral } from './peripheral';
+import { BasePeripheral, Peripheral } from './peripheral.js';
 
 export class RPPOWMAN extends BasePeripheral implements Peripheral {
   readUint32(offset: number) {

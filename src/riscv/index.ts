@@ -1,5 +1,5 @@
-import { Assembler } from "./Assembler/assembler";
-import { CPU, RegisterSet } from "./cpu";
+import { Assembler } from "./Assembler/assembler.js";
+import { CPU, RegisterSet } from "./cpu.js";
 
-export { CPU, RegisterSet } from "./cpu";
-export { Assembler } from "./Assembler/assembler";
+export { CPU, RegisterSet } from "./cpu.js";
+export { Assembler } from "./Assembler/assembler.js";

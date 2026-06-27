@@ -1,7 +1,7 @@
-import { B_Type, I_Type, Instruction, InstructionType, J_Type, R_Type, S_Type, U_Type } from "./Assembler/instruction";
-import { getRange } from "./binaryFunctions";
-import { IRPChip } from "../rpchip";
-import { decompress_rv32c_inst } from "./rv32c";
+import { B_Type, I_Type, Instruction, InstructionType, J_Type, R_Type, S_Type, U_Type } from "./Assembler/instruction.js";
+import { getRange } from "./binaryFunctions.js";
+import { IRPChip } from "../rpchip.js";
+import { decompress_rv32c_inst } from "./rv32c.js";
 
 enum ExecutionMode {
   Mode_Machine,

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { getBit, getRange, setBit, setRange, signExtend } from "../binaryFunctions";
+import { getBit, getRange, setBit, setRange, signExtend } from "../binaryFunctions.js";
 
 const getBitTestCases: Map<number[], number> = new Map([
   [[32, 4], 0],

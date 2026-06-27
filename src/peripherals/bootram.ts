@@ -1,4 +1,4 @@
-import { BasePeripheral, Peripheral } from './peripheral';
+import { BasePeripheral, Peripheral } from './peripheral.js';
 
 const BOOTLOCK_ST = 0x808;
 const BOOTLOCK0 = 0x80c;

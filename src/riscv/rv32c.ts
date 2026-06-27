@@ -1,4 +1,4 @@
-import { CPU } from "./cpu";
+import { CPU } from "./cpu.js";
 
 export function decompress_rv32c_inst(cpu: CPU, inst: number): number {
   let index = ((inst & 0x0003) << 3) | ((inst & 0xE000) >> 13);

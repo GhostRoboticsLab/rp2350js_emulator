@@ -1,5 +1,5 @@
-import { IRPChip } from '../rpchip';
-import { BasePeripheral, Peripheral } from './peripheral';
+import { IRPChip } from '../rpchip.js';
+import { BasePeripheral, Peripheral } from './peripheral.js';
 
 const VOLTAGE_SELECT = 0;
 const BANK0_FIRST = 0x4;

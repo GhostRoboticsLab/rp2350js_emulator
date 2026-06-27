@@ -1,10 +1,10 @@
 import * as fs from 'fs';
 import { describe, expect, it, vi } from 'vitest';
-import { BasePeripheral } from './peripherals/peripheral';
-import { RP2350 } from './rp2350';
-import { bootrom_rp2350_A2 } from '../demo/bootrom_rp2350';
-import { loadHex } from '../demo/intelhex';
-import { GPIOPinState } from '../src/gpio-pin';
+import { BasePeripheral } from './peripherals/peripheral.js';
+import { RP2350 } from './rp2350.js';
+import { bootrom_rp2350_A2 } from '../demo/bootrom_rp2350.js';
+import { loadHex } from '../demo/intelhex.js';
+import { GPIOPinState } from '../src/gpio-pin.js';
 
 describe('RP2350', () => {
   describe('IO Register Writes', () => {

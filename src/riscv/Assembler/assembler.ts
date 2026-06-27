@@ -1,4 +1,4 @@
-import { B_Type, I_Type, Instruction, InstructionType, InstructionValues, J_Type, R_Type, S_Type, U_Type } from "./instruction";
+import { B_Type, I_Type, Instruction, InstructionType, InstructionValues, J_Type, R_Type, S_Type, U_Type } from "./instruction.js";
 
 export class Assembler {
 

@@ -1,5 +1,5 @@
-import { IRPChip } from '../rpchip';
-import { BasePeripheral, Peripheral } from './peripheral';
+import { IRPChip } from '../rpchip.js';
+import { BasePeripheral, Peripheral } from './peripheral.js';
 
 export enum DREQChannel {
   DREQ_PIO0_TX0,

@@ -1,8 +1,8 @@
-import { IRPChip } from './rpchip';
-import { RP2040 } from './rp2040';
-import { Core } from './core';
-import { Interpolator } from './interpolator';
-import { FIFO } from './utils/fifo';
+import { IRPChip } from './rpchip.js';
+import { RP2040 } from './rp2040.js';
+import { Core } from './core.js';
+import { Interpolator } from './interpolator.js';
+import { FIFO } from './utils/fifo.js';
 
 //HARDWARE DIVIDER
 const DIV_UDIVIDEND = 0x060; //  Divider unsigned dividend

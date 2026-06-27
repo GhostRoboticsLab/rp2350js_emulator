@@ -1,7 +1,7 @@
-import { GPIOPin } from './gpio-pin';
-import { IClock } from './clock/clock';
-import { Logger } from './utils/logging';
-import { RPPIO } from './peripherals/pio';
+import { GPIOPin } from './gpio-pin.js';
+import { IClock } from './clock/clock.js';
+import { Logger } from './utils/logging.js';
+import { RPPIO } from './peripherals/pio.js';
 
 export interface IRPChip {
   readonly identifier: string; // "rp2040" or "rp2350"
