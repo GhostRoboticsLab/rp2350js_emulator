@@ -3,8 +3,23 @@
 # rp2350js — RP2350 (Hazard3 RISC-V) emulator
 
 A fork of [wokwi/rp2040js](https://github.com/wokwi/rp2040js) that emulates the **RP2350**
-(Raspberry Pi Pico 2) **Hazard3 RISC-V** cores, with a corrected and tested RISC-V instruction
-core.
+(Raspberry Pi Pico 2) **Hazard3 RISC-V** cores — a corrected, test-gated RISC-V core that boots the
+A2 bootrom and runs real firmware instruction-by-instruction, with no hardware in the loop.
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/ghostshow-main.gif" width="100%" alt="GhostLabs PGA2350 carrier (main): its 24-pixel WS2812 ghost matrix runs the ghostshow firmware light show — rainbow, plasma, fire, eyes — driven by this RP2350 Hazard3 emulator">
+      <br><sub><b>PGA2350 carrier</b> · main</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/ghostshow-mini.gif" width="100%" alt="GhostLabs PGA2350 mini carrier: its back-nested 24-pixel WS2812 ghost matrix runs the ghostshow firmware light show, driven by this RP2350 Hazard3 emulator">
+      <br><sub><b>PGA2350 carrier</b> · mini</sub>
+    </td>
+  </tr>
+</table>
+
+*This isn't a demo reel — it's a readout. The light show is the **`ghostshow`** firmware's [`effects.c`](https://github.com/GhostRoboticsLab/CustomPCB_ghost/tree/main/pga2350-carrier/firmware/ghostshow), and every WS2812 bit that drives it is produced by this engine stepping the Hazard3 core through the RP2350 bootrom, SIO, timers, and PIO. The boards are the [GhostLabs PGA2350 carriers](https://github.com/GhostRoboticsLab/CustomPCB_ghost) this emulator was built to bring up.*
 
 > **Status: early but real.** The RISC-V core boots and runs RV32IMAC + Zba/Zbb/Zbs/Zcb code and
 > passes a verified instruction-correctness suite. The RP2350 peripheral layer is now multi-chip
@@ -14,6 +29,16 @@ core.
 > GPIO3 and GPIO32, the latter through the RP2350 GPIOBASE pin-window). **All 348 tests pass, none
 > skipped.** Some RP2350 PIO features not yet exercised by firmware remain deferred — see
 > **[ROADMAP.md](./ROADMAP.md)**.
+
+## Why a digital twin
+
+The point of a digital twin is to fail in software, not silicon. This engine is the brain inside the
+[PGA2350 carrier](https://github.com/GhostRoboticsLab/CustomPCB_ghost)'s simulation: the firmware boots
+here — A2 bootrom → Hazard3 core → the WS2812 chain on GP28 — long before a board is reflowed, so a
+wrong `MUL`, a dropped timer IRQ, or a mis-based PIO pin-window surfaces as a **red test**, not a dead
+pixel on a soldered-down module. A Vite + TypeScript dashboard in the carrier repo drives this engine
+headless, reconstructs the GP28 bitstream into 24 live pixels, and plays exactly the show above in a
+browser. Same firmware binary, same instruction core — emulated here, reflowed there.
 
 ## Lineage & credit
 
