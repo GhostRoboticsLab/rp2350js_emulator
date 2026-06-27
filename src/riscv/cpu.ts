@@ -77,6 +77,12 @@ export class CPU {
     this.csrs[0x305] = 0x00001fff00;
     this.csrs[0x320] = 0x101;
     //TODO 0x3a1 - 0x7b0
+    // MEINEXT must reset to NOIRQ (bit 31), not 0. A zeroed MEINEXT reads as "IRQ 0, NOIRQ clear",
+    // which the !NOIRQ interrupt gate (the IRQ-0-delivery fix) would treat as a real pending IRQ 0
+    // the instant the firmware enables interrupts — a phantom trap before any IRQ has fired. With
+    // NOIRQ set at reset, !NOIRQ is false until a real interrupt populates MEINEXT (a true IRQ 0
+    // sets MEINEXT=0/NOIRQ-clear), so index 0 is still deliverable while the idle state is correct.
+    this.csrs[0xbe4] = (1 << 31) >>> 0;
     this.csrs[0xbe5] = 1<<15;
     this.csrs[0xf11] = (0x9<<7)|(0x13);
     this.csrs[0xf12] = 0x1b;
@@ -211,20 +217,18 @@ export class CPU {
   }
 
   updateMEINEXT() {
-    // Updates MEINEXT (gated by PPREEMPT) and mip.MEIP (gated by PREEMPT). The two thresholds
-    // differ during a preemption frame: meinext.irq stays visible down to PPREEMPT so a handler
-    // can loop-drain, but mip.MEIP must reflect only interrupts that can actually preempt the
-    // current frame (priority >= PREEMPT). Gating MEIP by PPREEMPT asserted it spuriously.
+    // MEINEXT and mip.MEIP are both gated by PPREEMPT. meinext.irq stays visible down to PPREEMPT so
+    // a handler can loop-drain pending interrupts within one frame, and Hazard3 keeps mip.MEIP
+    // asserted at that same level (it only suppresses the actual trap, in checkForInterrupts, via
+    // PREEMPT). NOTE: an earlier "fix" gated mip.MEIP by PREEMPT instead; that cleared mip.MEIP for
+    // a same-priority interrupt pending mid-handler, which broke firmware that polls mip while
+    // servicing a timer IRQ (hello_timer stalled after a few periods). Reverted to PPREEMPT.
     const meicontext_ppreempt = (this.csrs[0xbe5] >>> 24) & 0b1111;
-    const meicontext_preempt = (this.csrs[0xbe5] >>> 16) & 0b11111;
     if(this.meicand.length > 0 && this.meicand[0].priority >= meicontext_ppreempt) {
       this.csrs[0xbe4] = this.meicand[0].irq_number << 2;
-    } else {
-      this.csrs[0xbe4] = (1 << 31) >>> 0; // NOIRQ
-    }
-    if(this.meicand.length > 0 && this.meicand[0].priority >= meicontext_preempt) {
       this.csrs[0x344] |= 1 << 11;
     } else {
+      this.csrs[0xbe4] = (1 << 31) >>> 0; // NOIRQ
       this.csrs[0x344] &= ~(1 << 11);
     }
   }
@@ -318,15 +322,22 @@ export class CPU {
     // instruction executes at mtvec, instead of the old code landing at mtvec+ilen and skipping
     // it. For the ASYNCHRONOUS path (checkForInterrupts, before the fetch) executeInstruction
     // commits next_pc to pc before fetching.
+    // MTVEC bits [1:0] are the MODE field, not part of the address — they must be masked off the
+    // target. Only vectored interrupts add an offset; exceptions and direct-mode interrupts go to
+    // BASE = mtvec & ~3. The old code jumped to the raw mtvec, so a vectored mtvec (e.g. RP2350
+    // firmware sets 0x20000001) sent an exception/EBREAK to the odd address 0x20000001 -> fetch of a
+    // misaligned "instruction 0" -> crash. (c1570 masked this by accident: its sync-trap path landed
+    // at mtvec+ilen = 0x20000003, which happened to decode.)
     const mtvec = this.getCSR(0x305, 0);
+    const mtvecBase = mtvec & ~0b11;
     if(mcause >> 31) {
       if((mtvec & 1) == 0) {
-        this.next_pc = mtvec; // direct mtvec mode
+        this.next_pc = mtvecBase; // direct mode: all interrupts to BASE
       } else {
-        this.next_pc = (mtvec & ~0b11) + ((mcause & 0b1111) << 2); // vectored mtvec mode
+        this.next_pc = mtvecBase + ((mcause & 0b1111) << 2); // vectored mode
       }
     } else {
-      this.next_pc = mtvec; // "Exceptions jump to exactly the address of MTVEC"
+      this.next_pc = mtvecBase; // exceptions always go to BASE, even in vectored mode
     }
     this.branch_taken = true;
     this.cycles += 2;

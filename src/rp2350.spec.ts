@@ -37,18 +37,15 @@ describe('RP2350', () => {
     });
   });
 
-  // NOTE (GhostLabs fork): blink_simple now PASSES on the latest-upstream base — the RP2350
-  // peripheral parameterization (IRPChip multi-chip refactor, RESETS reset_mask, per-peripheral
-  // IRQ/DREQ) has landed. The remaining two are kept skipped for specific, documented reasons (see
-  // each, and ROADMAP.md):
-  //   - hello_timer: the RP2350 TIMER fires its interrupt correctly (offset/IRQ parameterization
-  //     works — 5 clean fires + deliveries were traced). It stops after ~4 iterations not for a
-  //     timer reason but a MULTICORE one: this firmware runs on both RISC-V cores and coordinates
-  //     via the SIO inter-core FIFO; a read-on-empty (ROE) state — sensitive to how stepCores()
-  //     interleaves core0/core1 — diverts the handler away from re-arming. Needs multicore-timing
-  //     fidelity work. (The loop is also ~20s+, too slow for CI as written.)
-  //   - pio_blink: needs RP2350 PIO GPIOBASE modelling (drives GPIO32) plus an unresolved
-  //     misaligned-PC fault early in this firmware.
+  // NOTE (GhostLabs fork): blink_simple and hello_timer now PASS on the latest-upstream base. Two
+  // genuine RISC-V core bugs (found by lockstepping this engine against c1570's) were fixed:
+  //   * MEINEXT reset value — it must reset to NOIRQ, else the !NOIRQ interrupt gate took a phantom
+  //     IRQ 0 the instant the firmware enabled interrupts (this is what stalled hello_timer).
+  //   * MTVEC mode bits — trap targets must mask mtvec[1:0]; a vectored mtvec (RP2350 uses
+  //     0x20000001) sent an exception to the odd address 0x20000001 and crashed (the pio_blink fault).
+  // pio_blink is still skipped: its crash is fixed, but driving GPIO from PIO on RP2350 needs the
+  // RP2350-specific PIO feature set ported from c1570 (GPIOBASE register for GPIO32, the 32-bit
+  // pin mask, IN_COUNT, and the RP2350 IRQ-index mode). See ROADMAP.md.
   describe('rp2350js regression tests', () => {
     it('should run blink_simple', () => {
       const rp2350 = new RP2350();
@@ -65,7 +62,7 @@ describe('RP2350', () => {
       expect(gpio25toggle).equals(2);
     });
 
-    it.skip('should run hello_timer', () => {
+    it('should run hello_timer', () => {
       const rp2350 = new RP2350();
       rp2350.loadBootrom(bootrom_rp2350_A2);
       const hex = fs.readFileSync("./demo/riscv_timer/hello_timer.hex", 'utf-8');
@@ -73,13 +70,12 @@ describe('RP2350', () => {
       rp2350.core0.pc = rp2350.core1.pc = 0x10000036;
       let output = "";
       rp2350.uart[0].onByte = (value: number) => {
-        process.stdout.write(new Uint8Array([value]));
         output = output + String.fromCharCode(value);
       };
       for(let i = 0; i < 250000000; i++) rp2350.step();
       expect(output.startsWith("Hello Timer!")).toBeTruthy();
       expect((output.match(/Repeat at/g) || []).length).equals(19);
-    }, 20000);
+    }, 60000);
   });
 
   it.skip('should run pio_blink', () => {
@@ -91,7 +87,6 @@ describe('RP2350', () => {
     rp2350.core0.pc = rp2350.core1.pc = 0x20000220;
     let output = "";
     rp2350.uart[0].onByte = (value: number) => {
-      process.stdout.write(new Uint8Array([value]));
       output = output + String.fromCharCode(value);
     };
     let gpio3toggle = 0;
