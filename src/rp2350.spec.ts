@@ -41,9 +41,12 @@ describe('RP2350', () => {
   // peripheral parameterization (IRPChip multi-chip refactor, RESETS reset_mask, per-peripheral
   // IRQ/DREQ) has landed. The remaining two are kept skipped for specific, documented reasons (see
   // each, and ROADMAP.md):
-  //   - hello_timer: the RP2350 TIMER interrupt now fires (offset/IRQ parameterization works), but
-  //     the exact repeat count depends on the emulator's long-run idle/clock-stepping model, and
-  //     the 250M-step loop runs ~20s+ (too slow for CI as written).
+  //   - hello_timer: the RP2350 TIMER fires its interrupt correctly (offset/IRQ parameterization
+  //     works — 5 clean fires + deliveries were traced). It stops after ~4 iterations not for a
+  //     timer reason but a MULTICORE one: this firmware runs on both RISC-V cores and coordinates
+  //     via the SIO inter-core FIFO; a read-on-empty (ROE) state — sensitive to how stepCores()
+  //     interleaves core0/core1 — diverts the handler away from re-arming. Needs multicore-timing
+  //     fidelity work. (The loop is also ~20s+, too slow for CI as written.)
   //   - pio_blink: needs RP2350 PIO GPIOBASE modelling (drives GPIO32) plus an unresolved
   //     misaligned-PC fault early in this firmware.
   describe('rp2350js regression tests', () => {

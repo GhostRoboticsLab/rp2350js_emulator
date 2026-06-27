@@ -51,11 +51,13 @@ de-asserts a high-numbered reset block and spins on `RESET_DONE` for it.
 
 ## Next — remaining RP2350 fidelity (two skipped integration tests)
 
-- **`hello_timer`** — the RP2350 TIMER interrupt now fires (offset + IRQ parameterization works; it
-  went from 0 → working repeats), but the exact repeat count over the 250M-step loop depends on the
-  emulator's long-run idle/clock-stepping model, and that loop runs ~20 s+ (too slow for CI as
-  written). Needs an idle fast-forward (advance the clock to the next scheduled alarm when both
-  cores are halted) and a faster test harness.
+- **`hello_timer`** — the RP2350 TIMER interrupt now fires correctly (offset + IRQ parameterization
+  works; 0 → working repeats, with 5 clean fires + deliveries traced; the clock advances fine, so it
+  is **not** an idle/clock issue). It stalls after ~4 iterations for a **multicore** reason: this
+  firmware runs on both RISC-V cores and coordinates through the SIO inter-core FIFO, and a
+  read-on-empty (`ROE`) state — sensitive to how `stepCores()` interleaves core0/core1 — diverts the
+  handler away from re-arming the alarm. Needs multicore-timing fidelity (lockstep / FIFO ordering),
+  and a faster test harness (the 250M-step loop runs ~20 s+).
 - **`pio_blink`** — needs RP2350 PIO **GPIOBASE** modelling (the firmware drives GPIO32, outside the
   low 32-pin window) plus an unresolved misaligned-PC fault early in this firmware.
 
