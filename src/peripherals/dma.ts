@@ -1,5 +1,5 @@
 import { IRQ } from '../irq.js';
-import { RP2040 } from '../rp2040.js';
+import { IRPChip } from '../rpchip.js';
 import { BasePeripheral, Peripheral } from './peripheral.js';
 
 export enum DREQChannel {
@@ -135,7 +135,7 @@ export class RPDMAChannel {
 
   constructor(
     readonly dma: RPDMA,
-    readonly rp2040: RP2040,
+    readonly rp2040: IRPChip,
     readonly index: number,
   ) {
     this.transferAlarm = rp2040.clock.createAlarm(this.transfer);

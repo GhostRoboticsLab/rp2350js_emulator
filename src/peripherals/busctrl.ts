@@ -1,4 +1,4 @@
-import { RP2040 } from '../rp2040.js';
+import { IRPChip } from '../rpchip.js';
 import { BasePeripheral, Peripheral } from './peripheral.js';
 
 /** Bus priority acknowledge */
@@ -29,7 +29,7 @@ export class RPBUSCTRL extends BasePeripheral implements Peripheral {
   readonly perfCtr = [0, 0, 0, 0];
   readonly perfSel = [0x1f, 0x1f, 0x1f, 0x1f];
 
-  constructor(rp2040: RP2040, name: string) {
+  constructor(rp2040: IRPChip, name: string) {
     super(rp2040, name);
   }
 

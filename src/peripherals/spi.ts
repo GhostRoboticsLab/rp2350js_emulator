@@ -1,4 +1,4 @@
-import { RP2040 } from '../rp2040.js';
+import { IRPChip } from '../rpchip.js';
 import { FIFO } from '../utils/fifo.js';
 import { DREQChannel } from './dma.js';
 import { BasePeripheral, Peripheral } from './peripheral.js';
@@ -60,8 +60,9 @@ const SSPRTINTR = 1 << 1;
 const SSPRORINTR = 1 << 0;
 
 export interface ISPIDMAChannels {
-  rx: DREQChannel;
-  tx: DREQChannel;
+  // Numeric DREQ ids: the RP2040 and RP2350 DREQChannel enums differ, so accept either chip's value.
+  rx: number;
+  tx: number;
 }
 
 export class RPSPI extends BasePeripheral implements Peripheral {
@@ -113,22 +114,22 @@ export class RPSPI extends BasePeripheral implements Peripheral {
 
   private updateDMATx() {
     if (this.txFIFO.full) {
-      this.rp2040.dma.clearDREQ(this.dreq.tx);
+      this.rp2040.dma_clearDREQ(this.dreq.tx);
     } else {
-      this.rp2040.dma.setDREQ(this.dreq.tx);
+      this.rp2040.dma_setDREQ(this.dreq.tx);
     }
   }
 
   private updateDMARx() {
     if (this.rxFIFO.empty) {
-      this.rp2040.dma.clearDREQ(this.dreq.rx);
+      this.rp2040.dma_clearDREQ(this.dreq.rx);
     } else {
-      this.rp2040.dma.setDREQ(this.dreq.rx);
+      this.rp2040.dma_setDREQ(this.dreq.rx);
     }
   }
 
   constructor(
-    rp2040: RP2040,
+    rp2040: IRPChip,
     name: string,
     readonly irq: number,
     readonly dreq: ISPIDMAChannels,

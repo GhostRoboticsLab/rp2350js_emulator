@@ -1,4 +1,4 @@
-import { RP2040 } from '../rp2040.js';
+import { IRPChip } from '../rpchip.js';
 import { BasePeripheral, Peripheral } from './peripheral.js';
 
 const CLK_GPOUT0_CTRL = 0x00;
@@ -55,7 +55,7 @@ export class RPClocks extends BasePeripheral implements Peripheral {
   adcDiv = 0x100;
   rtcCtrl = 0;
   rtcDiv = 0x100;
-  constructor(rp2040: RP2040, name: string) {
+  constructor(rp2040: IRPChip, name: string) {
     super(rp2040, name);
   }
 

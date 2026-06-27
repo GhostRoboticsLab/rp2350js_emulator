@@ -1,7 +1,14 @@
 import { IClock } from './clock/clock.js';
+import { IRPChip } from './rpchip.js';
 import { SimulationClock } from './clock/simulation-clock.js';
 import { CortexM0Core } from './cortex-m0-core.js';
-import { GPIOPin } from './gpio-pin.js';
+import {
+  GPIOPin,
+  FUNCTION_PWM,
+  FUNCTION_SIO,
+  FUNCTION_PIO0,
+  FUNCTION_PIO1,
+} from './gpio-pin.js';
 import { IRQ } from './irq.js';
 import { RPADC } from './peripherals/adc.js';
 import { RPBUSCTRL } from './peripherals/busctrl.js';
@@ -11,7 +18,7 @@ import { RPI2C } from './peripherals/i2c.js';
 import { RPIO } from './peripherals/io.js';
 import { RPPADS } from './peripherals/pads.js';
 import { Peripheral, UnimplementedPeripheral } from './peripherals/peripheral.js';
-import { RPPIO } from './peripherals/pio.js';
+import { RPPIO, WaitType } from './peripherals/pio.js';
 import { RPPPB } from './peripherals/ppb.js';
 import { RPPSM } from './peripherals/psm.js';
 import { RPPWM } from './peripherals/pwm.js';
@@ -43,7 +50,8 @@ const KB = 1024;
 const MB = 1024 * KB;
 const MHz = 1_000_000;
 
-export class RP2040 {
+export class RP2040 implements IRPChip {
+  readonly identifier = 'rp2040';
   readonly bootrom = new Uint32Array(4 * KB);
   readonly sram = new Uint8Array(264 * KB);
   readonly sramView = new DataView(this.sram.buffer);
@@ -119,7 +127,9 @@ export class RP2040 {
   ];
 
   readonly dma = new RPDMA(this, 'DMA');
-  readonly pio = [
+  // Explicit type: with `implements IRPChip`, the inferred element type would reference RP2040
+  // (via the IGPIOChipHost the machines hold) circularly through this field's own initializer.
+  readonly pio: RPPIO[] = [
     new RPPIO(this, 'PIO0', IRQ.PIO0_IRQ0, 0),
     new RPPIO(this, 'PIO1', IRQ.PIO1_IRQ0, 1),
   ];
@@ -187,6 +197,15 @@ export class RP2040 {
     this.bootrom.set(bootromData);
     this.reset();
   }
+
+  // IRPChip surface (disassembly view / execution trace hook). RP2040 has no built-in disassembler;
+  // these let tooling attach one, matching the RP2350 chip API.
+  disassembly = '';
+  loadDisassembly(dis: string) {
+    this.disassembly = dis;
+  }
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  onTrace = (coreNumber: number, pc: number, tag: string) => {};
 
   reset() {
     this.core.reset();
@@ -345,12 +364,15 @@ export class RP2040 {
     this.writeUint32(alignedAddress, newValue[0]);
   }
 
-  get gpioValues() {
+  // Method (not a getter) to match IRPChip — RP2350 reads pin banks in 32-bit windows
+  // (gpioValues(0), gpioValues(32)); RP2040 has a single bank, so callers pass 0.
+  gpioValues(start_index: number) {
     const { gpio } = this;
     let result = 0;
-    for (let gpioIndex = 0; gpioIndex < gpio.length; gpioIndex++) {
+    const end_index = Math.min(start_index + 32, gpio.length);
+    for (let gpioIndex = start_index; gpioIndex < end_index; gpioIndex++) {
       if (gpio[gpioIndex].inputValue) {
-        result |= 1 << gpioIndex;
+        result |= 1 << (gpioIndex - start_index);
       }
     }
     return result;
@@ -358,6 +380,24 @@ export class RP2040 {
 
   setInterrupt(irq: number, value: boolean) {
     this.core.setInterrupt(irq, value);
+  }
+
+  // Single-core part: the per-core variant ignores the core index. Present for IRPChip parity
+  // with the dual-core RP2350.
+  setInterruptCore(irq: number, value: boolean, _core: number) {
+    this.core.setInterrupt(irq, value);
+  }
+
+  dma_clearDREQ(dreq: number) {
+    this.dma.clearDREQ(dreq);
+  }
+
+  dma_setDREQ(dreq: number) {
+    this.dma.setDREQ(dreq);
+  }
+
+  get cycles(): number {
+    return this.core.cycles;
   }
 
   updateIOInterrupt() {
@@ -370,7 +410,68 @@ export class RP2040 {
     this.setInterrupt(IRQ.IO_BANK0, interruptValue);
   }
 
+  // GPIOPin delegates its function-select -> peripheral-output dispatch to the chip (see
+  // IGPIOChipHost in gpio-pin.ts). RP2040 wires the RP2040 peripheral set; RP2350 has its own.
+  gpioRawOutputEnable(index: number): boolean {
+    const bitmask = 1 << index;
+    switch (this.gpio[index].functionSelect) {
+      case FUNCTION_PWM:
+        return !!(this.pwm.gpioDirection & bitmask);
+      case FUNCTION_SIO:
+        return !!(this.sio.gpioOutputEnable & bitmask);
+      case FUNCTION_PIO0:
+        return !!(this.pio[0].pinDirections & bitmask);
+      case FUNCTION_PIO1:
+        return !!(this.pio[1].pinDirections & bitmask);
+      default:
+        return false;
+    }
+  }
+
+  gpioRawOutputValue(index: number): boolean {
+    const bitmask = 1 << index;
+    switch (this.gpio[index].functionSelect) {
+      case FUNCTION_PWM:
+        return !!(this.pwm.gpioValue & bitmask);
+      case FUNCTION_SIO:
+        return !!(this.sio.gpioValue & bitmask);
+      case FUNCTION_PIO0:
+        return !!(this.pio[0].pinValues & bitmask);
+      case FUNCTION_PIO1:
+        return !!(this.pio[1].pinValues & bitmask);
+      default:
+        return false;
+    }
+  }
+
+  gpioInputValueHasBeenSet(index: number): void {
+    if (this.gpio[index].functionSelect === FUNCTION_PWM) {
+      this.pwm.gpioOnInput(index);
+    }
+    for (const pio of this.pio) {
+      for (const machine of pio.machines) {
+        if (
+          machine.enabled &&
+          machine.waiting &&
+          machine.waitType === WaitType.Pin &&
+          machine.waitIndex === index
+        ) {
+          machine.checkWait();
+        }
+      }
+    }
+  }
+
   step() {
     this.core.executeInstruction();
   }
+
+  // IRPChip parity. RP2040 advances peripherals through its existing clock/alarm machinery rather
+  // than the RP2350 stepCores/stepThings split, so these just satisfy the interface; nothing on the
+  // RP2040 path calls them.
+  stepCores(): void {
+    this.step();
+  }
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  stepThings(cycles: number): void {}
 }

@@ -1,4 +1,4 @@
-import { RP2040 } from '../rp2040.js';
+import { IRPChip } from '../rpchip.js';
 import { FIFO } from '../utils/fifo.js';
 import { BasePeripheral, Peripheral } from './peripheral.js';
 
@@ -194,7 +194,7 @@ export class RPI2C extends BasePeripheral implements Peripheral {
   }
 
   constructor(
-    rp2040: RP2040,
+    rp2040: IRPChip,
     name: string,
     readonly irq: number,
   ) {

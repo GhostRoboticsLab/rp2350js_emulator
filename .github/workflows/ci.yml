@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: test (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      # --ignore-scripts skips the husky `prepare` hook (no git hooks needed in CI).
+      # vitest transpiles on the fly, so no build step is required to run the suite.
+      - run: npm ci --ignore-scripts
+      - run: npm test

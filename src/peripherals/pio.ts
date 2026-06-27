@@ -1,4 +1,4 @@
-import { RP2040 } from '../rp2040.js';
+import { IRPChip } from '../rpchip.js';
 import { FIFO } from '../utils/fifo.js';
 import { DREQChannel } from './dma.js';
 import { BasePeripheral, Peripheral } from './peripheral.js';
@@ -24,6 +24,10 @@ const IRQ0_INTS = 0x134; // Interrupt status after masking & forcing for irq0
 const IRQ1_INTE = 0x138; // Interrupt Enable for irq1
 const IRQ1_INTF = 0x13c; // Interrupt Force for irq1
 const IRQ1_INTS = 0x140; // Interrupt status after masking & forcing for irq1
+
+// RP2350-only: selects whether this PIO's internal 32-pin window starts at chip GPIO0 or GPIO16
+// (the GPIOBASE bit is bit 4, so the stored offset is 0 or 16). Lets one PIO drive GPIO16..47.
+const RP2350_GPIOBASE = 0x168;
 
 // State-machine specific registers
 const TXF0 = 0x010;
@@ -153,11 +157,15 @@ export class StateMachine {
   waitPolarity = false;
   waitDelay = -1;
 
-  readonly dreqRx = this.pio.dreqRx[this.index];
-  readonly dreqTx = this.pio.dreqTx[this.index];
+  // RP2350 numbers PIO DREQs as contiguous per-block bases (dreq*_base + state-machine index);
+  // RP2040 uses fixed per-block arrays. Prefer the base when the chip supplied one.
+  readonly dreqRx =
+    this.pio.dreqRx_base !== undefined ? this.pio.dreqRx_base + this.index : this.pio.dreqRx[this.index];
+  readonly dreqTx =
+    this.pio.dreqTx_base !== undefined ? this.pio.dreqTx_base + this.index : this.pio.dreqTx[this.index];
 
   constructor(
-    readonly rp2040: RP2040,
+    readonly rp2040: IRPChip,
     readonly pio: RPPIO,
     readonly index: number,
   ) {
@@ -167,17 +175,17 @@ export class StateMachine {
 
   private updateDMATx() {
     if (this.txFIFO.full) {
-      this.rp2040.dma.clearDREQ(this.dreqTx);
+      this.rp2040.dma_clearDREQ(this.dreqTx);
     } else {
-      this.rp2040.dma.setDREQ(this.dreqTx);
+      this.rp2040.dma_setDREQ(this.dreqTx);
     }
   }
 
   private updateDMARx() {
     if (this.rxFIFO.empty) {
-      this.rp2040.dma.clearDREQ(this.dreqRx);
+      this.rp2040.dma_clearDREQ(this.dreqRx);
     } else {
-      this.rp2040.dma.setDREQ(this.dreqRx);
+      this.rp2040.dma_setDREQ(this.dreqRx);
     }
   }
 
@@ -268,7 +276,8 @@ export class StateMachine {
   }
 
   get inPins() {
-    const { gpioValues } = this.rp2040;
+    // Read the 32-pin window this PIO block sees (RP2350 can re-base it via GPIOBASE; 0 on RP2040).
+    const gpioValues = this.rp2040.gpioValues(this.pio.gpiobase);
     const { inBase } = this;
     return inBase ? (gpioValues << (32 - inBase)) | (gpioValues >>> inBase) : gpioValues;
   }
@@ -925,6 +934,11 @@ export class RPPIO extends BasePeripheral implements Peripheral {
   readonly instructions = new Uint32Array(32);
   readonly dreqRx = this.index ? dreqRx1 : dreqRx0;
   readonly dreqTx = this.index ? dreqTx1 : dreqTx0;
+  // GPIO base offset for the PIO pin window (RP2350 GPIOBASE register; always 0 on RP2040).
+  gpiobase = 0;
+  // RP2350 has 48 GPIOs, a movable PIO pin window (GPIOBASE) and a 32-bit pad mask; RP2040 has none
+  // of these. Gate the RP2350-only behaviour on the chip identifier rather than the concrete class.
+  readonly isRp2040 = this.rp2040.identifier === 'rp2040';
   readonly machines = [
     new StateMachine(this.rp2040, this, 0),
     new StateMachine(this.rp2040, this, 1),
@@ -950,12 +964,29 @@ export class RPPIO extends BasePeripheral implements Peripheral {
   irq1IntForce = 0;
 
   constructor(
-    rp2040: RP2040,
+    rp2040: IRPChip,
     name: string,
     readonly firstIrq: number,
     readonly index: number,
+    // RP2350 supplies per-block DREQ bases (RP2040 leaves these undefined and uses dreqRx/dreqTx).
+    readonly dreqRx_base?: number,
+    readonly dreqTx_base?: number,
   ) {
     super(rp2040, name);
+  }
+
+  // Read a chip GPIO's PIO-driven output / direction. RP2350 can re-base the PIO pin window via the
+  // GPIOBASE register; that offset is modelled by `gpiobase` (0 on RP2040).
+  getPinValue(chip_gpio_index: number): boolean {
+    const index = chip_gpio_index - this.gpiobase;
+    if (index < 0 || index > 31) return false;
+    return !!(this.pinValues & (1 << index));
+  }
+
+  getPinOutputEnabled(chip_gpio_index: number): boolean {
+    const index = chip_gpio_index - this.gpiobase;
+    if (index < 0 || index > 31) return false;
+    return !!(this.pinDirections & (1 << index));
   }
 
   get intRaw() {
@@ -1057,6 +1088,11 @@ export class RPPIO extends BasePeripheral implements Peripheral {
         return this.irq1IntForce;
       case IRQ1_INTS:
         return this.irq1IntStatus;
+      case RP2350_GPIOBASE:
+        if (!this.isRp2040) {
+          return this.gpiobase;
+        }
+        break;
     }
     return super.readUint32(offset);
   }
@@ -1147,6 +1183,13 @@ export class RPPIO extends BasePeripheral implements Peripheral {
         this.irq1IntForce = value & 0xfff;
         this.checkInterrupts();
         break;
+      case RP2350_GPIOBASE:
+        if (!this.isRp2040) {
+          this.gpiobase = value & 16;
+        } else {
+          super.writeUint32(offset, value);
+        }
+        break;
       default:
         super.writeUint32(offset, value);
     }
@@ -1155,14 +1198,18 @@ export class RPPIO extends BasePeripheral implements Peripheral {
   pinValuesChanged(value: number, firstPin: number, count: number) {
     // TODO: wrapping after pin 31
     const mask = count > 31 ? 0xffffffff : ((1 << count) - 1) << firstPin;
-    const newValue = ((this.pinValues & ~mask) | ((value << firstPin) & mask)) & 0x3fffffff;
+    const newValue =
+      ((this.pinValues & ~mask) | ((value << firstPin) & mask)) &
+      (this.isRp2040 ? 0x3fffffff : 0xffffffff);
     this.pinValues = newValue;
   }
 
   pinDirectionsChanged(value: number, firstPin: number, count: number) {
     // TODO: wrapping after pin 31
     const mask = count > 31 ? 0xffffffff : ((1 << count) - 1) << firstPin;
-    const newValue = ((this.pinDirections & ~mask) | ((value << firstPin) & mask)) & 0x3fffffff;
+    const newValue =
+      ((this.pinDirections & ~mask) | ((value << firstPin) & mask)) &
+      (this.isRp2040 ? 0x3fffffff : 0xffffffff);
     this.pinDirections = newValue;
   }
 
@@ -1186,11 +1233,17 @@ export class RPPIO extends BasePeripheral implements Peripheral {
       this.oldPinDirections = this.pinDirections;
       this.oldPinValues = this.pinValues;
 
-      // Notify GPIO about the changed pins
+      // Notify GPIO about the changed pins. `changedPins` lives in the PIO's internal 32-pin space;
+      // RP2350 re-bases that window onto chip GPIOs via GPIOBASE (`gpiobase`, always 0 on RP2040).
+      // (The old `1 << gpioIndex` over gpio.length aliased pins 32..47 back onto 0..15 — JS shifts
+      // are mod-32 — and never applied the offset, so GPIO16..47 were never notified.)
       const { gpio } = this.rp2040;
-      for (let gpioIndex = 0; gpioIndex < gpio.length; gpioIndex++) {
-        if (changedPins & (1 << gpioIndex)) {
-          gpio[gpioIndex].checkForUpdates();
+      for (let pinIndex = 0; pinIndex < 32; pinIndex++) {
+        if (changedPins & (1 << pinIndex)) {
+          const gpioIndex = pinIndex + this.gpiobase;
+          if (gpioIndex < gpio.length) {
+            gpio[gpioIndex].checkForUpdates();
+          }
         }
       }
     }
