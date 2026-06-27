@@ -34,6 +34,11 @@ export class CPU {
   meicand = new Array<EICAND>();
 
   did_just_jump = false;
+  // True when the current instruction set a new PC (branch / jump / trap). Replaces the old
+  // `next_pc == 0` sentinel, which silently dropped any control transfer whose target was
+  // exactly 0 (the bootrom base) and made synchronous traps land at mtvec+ilen instead of
+  // mtvec. Set in every branch/JAL/JALR/MRET handler and in trapEntry; consumed in step().
+  branch_taken = false;
 
   constructor(readonly chip: IRPChip, readonly coreLabel: string, readonly mhartid: number) {
     this.reset();
@@ -47,7 +52,18 @@ export class CPU {
     return this.chip.logger;
   }
 
-  reset() { // TODO
+  reset() {
+    // Restore the architectural reset state. This previously did NOT reset the PC, so a warm
+    // reset (e.g. loadBootrom on a core that had already executed) resumed mid-stream instead
+    // of re-entering the reset vector (0 on Hazard3/RP2350). Cold boot only worked by luck of
+    // the field initializer being 0.
+    this.pc = 0;
+    this.next_pc = 0;
+    this.branch_taken = false;
+    this.did_just_jump = false;
+    this.waiting = false;
+    this.eventRegistered = false;
+    this.inst_length = 0;
     this.meiea.fill(0);
     this.meipa.fill(0);
     this.meifa.fill(0);
@@ -102,6 +118,13 @@ export class CPU {
 
   executeInstruction() {
     this.checkForInterrupts();
+    if (this.branch_taken) {
+      // An asynchronous trap (external interrupt) redirected the PC before this fetch.
+      // Commit it now so we fetch from the vector; the vector instruction then steps normally.
+      this.pc = this.next_pc >>> 0;
+      this.branch_taken = false;
+      this.did_just_jump = true;
+    }
     if (this.waiting) {
       this.cycles++;
       return;
@@ -147,9 +170,9 @@ export class CPU {
         break;
     }
 
-    if(this.next_pc != 0) {
-      this.pc = this.next_pc;
-      this.next_pc = 0;
+    if(this.branch_taken) {
+      this.pc = this.next_pc >>> 0;
+      this.branch_taken = false;
       this.did_just_jump = true;
     } else {
       this.pc += this.inst_length;
@@ -188,15 +211,20 @@ export class CPU {
   }
 
   updateMEINEXT() {
-    // updates MEINEXT and MIE.MEIP
+    // Updates MEINEXT (gated by PPREEMPT) and mip.MEIP (gated by PREEMPT). The two thresholds
+    // differ during a preemption frame: meinext.irq stays visible down to PPREEMPT so a handler
+    // can loop-drain, but mip.MEIP must reflect only interrupts that can actually preempt the
+    // current frame (priority >= PREEMPT). Gating MEIP by PPREEMPT asserted it spuriously.
     const meicontext_ppreempt = (this.csrs[0xbe5] >>> 24) & 0b1111;
+    const meicontext_preempt = (this.csrs[0xbe5] >>> 16) & 0b11111;
     if(this.meicand.length > 0 && this.meicand[0].priority >= meicontext_ppreempt) {
-      // note that we're looking at *PP*REEMPT here - interrupts with equal or higher priority than that ARE visible in MEINEXT
-      // but might still NOT trigger a trap in case their priority is lower than *P*REEMPT.
       this.csrs[0xbe4] = this.meicand[0].irq_number << 2;
+    } else {
+      this.csrs[0xbe4] = (1 << 31) >>> 0; // NOIRQ
+    }
+    if(this.meicand.length > 0 && this.meicand[0].priority >= meicontext_preempt) {
       this.csrs[0x344] |= 1 << 11;
     } else {
-      this.csrs[0xbe4] = (1 << 31) >>> 0;
       this.csrs[0x344] &= ~(1 << 11);
     }
   }
@@ -225,7 +253,7 @@ export class CPU {
     meicontext |= ((this.csrs[0xbe5] >>> 24) & 0b1111) << 28;
     // update PREEMPT
     const current_irq = (this.csrs[0xbe4] >>> 2) & 511;
-    if(current_irq > 0) {
+    if(!((this.csrs[0xbe4] >>> 31) & 1)) { // a real IRQ is in meinext (NOIRQ clear) - including index 0
       meicontext |= (this.meipra[current_irq] + 1) << 16;
     } else {
       meicontext |= 16 << 16;
@@ -251,10 +279,13 @@ export class CPU {
     if(!this.interruptsUpdated) return;
     this.interruptsUpdated = false;
     if(this.csrs[0x304] & 0b100000000000) { // if MIE.MEIE is set... TODO consider software and timer interrupts as well
+      const meinext_noirq = (this.csrs[0xbe4] >>> 31) & 1; // meinext.NOIRQ (bit 31)
       const meinext_irq_number = (this.csrs[0xbe4] >>> 2) & 511;
       const meinext_irq_prio = this.meipra[meinext_irq_number];
       const meicontext_preempt = (this.csrs[0xbe5] >>> 16) & 0b11111;
-      if(meinext_irq_number > 0 && meinext_irq_prio >= meicontext_preempt) { // ...and the interrupt visible in MEINEXT has at least PREEMPT priority...
+      // Presence of an external interrupt is signalled by NOIRQ, NOT by irq != 0: index 0
+      // (TIMER0_IRQ_0 on RP2350) is a legal interrupt and was previously never taken.
+      if(!meinext_noirq && meinext_irq_prio >= meicontext_preempt) { // ...and the interrupt visible in MEINEXT has at least PREEMPT priority...
         if(this.csrs[0x300] & 0b1000) { // ...and MSTATUS.MIE is set...
           this.updateMEICONTEXT_priority_save(); // this gets called ONLY on external interrupt trap
           this.trapEntry(((1<<31) | 11) >>> 0); //TODO hardwired cause MEIP = external interrupt
@@ -276,21 +307,28 @@ export class CPU {
     // 6. Save the current value of MSTATUS.MIE to MSTATUS.MPIE
     let mstatus = this.getCSR(0x300, 0);
     mstatus &= ~0b10000000; mstatus |= (mstatus << 4) & 0b10000000;
-    // 7. Disable interrupts by clearing MSTATUS.MIE
-    mstatus &= 1<<7;
+    // 7. Disable interrupts by clearing MSTATUS.MIE. MIE is bit 3 (0b1000). The old `&= 1<<7`
+    // kept only MPIE (bit 7) and wiped the rest of mstatus (MPP etc.); the mret path restores
+    // MIE from MPIE with `&= ~0b1000`, confirming the intent is to clear only MIE here.
+    mstatus &= ~(1<<3);
     this.setCSR(0x300, mstatus, 0);
-    // 8. Jump to the correct offset from MTVEC depending on the trap cause
+    // 8. Jump to the correct offset from MTVEC depending on the trap cause. Set next_pc +
+    // branch_taken rather than this.pc directly: for a SYNCHRONOUS trap (ecall/ebreak, invoked
+    // from inside step()) this routes through the normal commit so the handler's FIRST
+    // instruction executes at mtvec, instead of the old code landing at mtvec+ilen and skipping
+    // it. For the ASYNCHRONOUS path (checkForInterrupts, before the fetch) executeInstruction
+    // commits next_pc to pc before fetching.
     const mtvec = this.getCSR(0x305, 0);
     if(mcause >> 31) {
       if((mtvec & 1) == 0) {
-        this.pc = mtvec; // direct mtvec mode
+        this.next_pc = mtvec; // direct mtvec mode
       } else {
-        this.pc = (mtvec & ~0b11) + ((mcause & 0b1111) << 2); // vectored mtvec mode
+        this.next_pc = (mtvec & ~0b11) + ((mcause & 0b1111) << 2); // vectored mtvec mode
       }
     } else {
-      this.pc = mtvec; // "Exceptions jump to exactly the address of MTVEC"
+      this.next_pc = mtvec; // "Exceptions jump to exactly the address of MTVEC"
     }
-    this.next_pc = 0;
+    this.branch_taken = true;
     this.cycles += 2;
   }
 
@@ -753,12 +791,15 @@ const opcode0x13func3Table: FuncTable<I_Type> = new Map([
   }],
 
   [0x3, (instruction: I_Type, cpu: CPU) => { // sltiu
-    const { rd, rs1, immU } = instruction;
+    const { rd, rs1, imm } = instruction;
     const { registerSet } = cpu;
 
     const rs1Value = registerSet.getRegisterU(rs1);
 
-    const result = rs1Value < immU ? 1 : 0;
+    // The 12-bit immediate is SIGN-extended to XLEN, then both operands compared as unsigned.
+    // The old code compared against the zero-extended `immU` (0..4095), wrong for any negative
+    // immediate (e.g. `sltiu rd, rs1, -1` must compare against 0xFFFFFFFF, not 4095).
+    const result = (rs1Value >>> 0) < (imm >>> 0) ? 1 : 0;
     registerSet.setRegister(rd, result);
   }],
 
@@ -911,8 +952,11 @@ const opcode0x33func3Table: FuncTable<R_Type> = new Map([
       const difference = registerSet.getRegister(rs1) - registerSet.getRegister(rs2);
       registerSet.setRegister(rd, difference);
     } else if (func7 === 0x1) { // mul (rv32m)
-      const result = registerSet.getRegister(rs1) * registerSet.getRegister(rs2);
-      registerSet.setRegister(rd, result & 0xffffffff); // FIXME check sign
+      // Exact low-32 product. A JS float64 multiply rounds for any product > 2^53, so the low
+      // bits the `& 0xffffffff` mask extracted were already corrupted (~95% of random operand
+      // pairs wrong). Math.imul does an exact modular 32x32 multiply; the low word is identical
+      // for signed/unsigned operands, so the old "FIXME check sign" was a non-issue.
+      registerSet.setRegister(rd, Math.imul(rs1Value, rs2Value));
     } else throw Error(`Unknown instruction, func7: 0x${func7.toString(16)}`);
 
   }],
@@ -928,8 +972,12 @@ const opcode0x33func3Table: FuncTable<R_Type> = new Map([
       const result = rs1Value << rs2Value;
       registerSet.setRegister(rd, result);
     } else if(func7 === 0x1) { // mulh (rv32m)
-      const result = (rs1Value * registerSet.getRegister(rs2) / 0x100000000) >>> 0;
-      registerSet.setRegisterU(rd, result);
+      // Upper 32 bits of the signed*signed 64-bit product. The old `* / 2^32 >>> 0` form was
+      // wrong twice over: float64 loses precision above 2^53, and `>>> 0` truncates toward zero
+      // instead of flooring, so it returned 0 for every small negative product. BigInt is exact
+      // and sign-correct.
+      const product = BigInt(rs1Value) * BigInt(registerSet.getRegister(rs2));
+      registerSet.setRegisterU(rd, Number((product >> 32n) & 0xffffffffn));
     } else if(func7 === 0x14) { // bset (Zbs)
       const index = rs2Value & 31;
       const result = rs1Value | (1 << index);
@@ -968,6 +1016,12 @@ const opcode0x33func3Table: FuncTable<R_Type> = new Map([
     } else if(func7 === 0x10) { // sh1add (Zbb)
       const result = ((rs1Value << 1) + rs2Value) & 0xffffffff;
       registerSet.setRegister(rd, result);
+    } else if(func7 === 0x1) { // mulhsu (rv32m) - upper 32 bits of signed(rs1) * unsigned(rs2)
+      // Was entirely missing from this func3=0x2 handler, so a MULHSU fell through to `throw`
+      // and HARD-ABORTED the core. MULHSU is mandatory in the M extension (Hazard3 implements
+      // it) and GCC emits it for mixed-sign 64-bit multiplies. rs1 signed, rs2 unsigned.
+      const product = BigInt(rs1Value) * BigInt(registerSet.getRegisterU(rs2));
+      registerSet.setRegisterU(rd, Number((product >> 32n) & 0xffffffffn));
     } else throw Error(`Unknown instruction, func7: 0x${func7.toString(16)}`);
   }],
 
@@ -982,8 +1036,10 @@ const opcode0x33func3Table: FuncTable<R_Type> = new Map([
       const result = rs1Value < rs2Value ? 1 : 0;
       registerSet.setRegister(rd, result);
     } else if(func7 === 1) { // mulhu (rv32m)
-      const result = (rs1Value * rs2Value / 0x100000000) >>> 0;
-      registerSet.setRegister(rd, result);
+      // Upper 32 bits of the unsigned*unsigned 64-bit product. Float64 division lost precision
+      // near 2^32 boundaries (off-by-one high word). BigInt is exact.
+      const product = BigInt(rs1Value >>> 0) * BigInt(rs2Value >>> 0);
+      registerSet.setRegisterU(rd, Number((product >> 32n) & 0xffffffffn));
     } else throw Error(`Unknown instruction, func7: 0x${func7.toString(16)}`);
   }],
 
@@ -1121,6 +1177,7 @@ const opcode0x63func3Table: FuncTable<B_Type> = new Map([
     const do_branch = rs1Value === rs2Value;
     if (do_branch) {
       cpu.next_pc = cpu.pc + imm;
+      cpu.branch_taken = true;
     }
     cpu.h3_branch_cycles(do_branch);
   }],
@@ -1135,6 +1192,7 @@ const opcode0x63func3Table: FuncTable<B_Type> = new Map([
     const do_branch = rs1Value !== rs2Value;
     if (do_branch) {
       cpu.next_pc = cpu.pc + imm;
+      cpu.branch_taken = true;
     }
     cpu.h3_branch_cycles(do_branch);
   }],
@@ -1149,6 +1207,7 @@ const opcode0x63func3Table: FuncTable<B_Type> = new Map([
     const do_branch = rs1Value < rs2Value;
     if (do_branch) {
       cpu.next_pc = cpu.pc + imm;
+      cpu.branch_taken = true;
     }
     cpu.h3_branch_cycles(do_branch);
   }],
@@ -1163,6 +1222,7 @@ const opcode0x63func3Table: FuncTable<B_Type> = new Map([
     const do_branch = rs1Value >= rs2Value;
     if (do_branch) {
       cpu.next_pc = cpu.pc + imm;
+      cpu.branch_taken = true;
     }
     cpu.h3_branch_cycles(do_branch);
   }],
@@ -1177,6 +1237,7 @@ const opcode0x63func3Table: FuncTable<B_Type> = new Map([
     const do_branch = rs1Value < rs2Value;
     if (do_branch) {
       cpu.next_pc = cpu.pc + imm;
+      cpu.branch_taken = true;
     }
     cpu.h3_branch_cycles(do_branch);
   }],
@@ -1191,6 +1252,7 @@ const opcode0x63func3Table: FuncTable<B_Type> = new Map([
     const do_branch = rs1Value >= rs2Value;
     if (do_branch) {
       cpu.next_pc = cpu.pc + imm;
+      cpu.branch_taken = true;
     }
     cpu.h3_branch_cycles(do_branch);
   }],
@@ -1204,7 +1266,9 @@ const opcode0x67func3Table: FuncTable<I_Type> = new Map([
     const rs1Value = registerSet.getRegister(rs1);
 
     registerSet.setRegister(rd, cpu.pc + cpu.inst_length);
-    cpu.next_pc = rs1Value + imm;
+    // JALR: target = (rs1 + imm) with bit 0 forced to zero (spec). The mask was missing.
+    cpu.next_pc = (rs1Value + imm) & ~1;
+    cpu.branch_taken = true;
     cpu.cycles++;
   }]
 ]);
@@ -1221,6 +1285,7 @@ const opcode0x73func3Table: FuncTable<I_Type> = new Map([
         mstatus |= 1<<7; // Write 1 to MSTATUS.MPIE
         cpu.setCSR(0x300, mstatus, 0);
         cpu.next_pc = cpu.getCSR(0x341, 0); // Jump to the address in MEPC.
+        cpu.branch_taken = true;
         cpu.cycles++;
         cpu.updateMEICONTEXT_priority_restore(); // Xh3irq
         cpu.interruptsUpdated = true;
@@ -1264,7 +1329,10 @@ const opcode0x73func3Table: FuncTable<I_Type> = new Map([
     const notValue = registerSet.getRegister(rs1);
     const oldValue = cpu.getCSR(immU, notValue);
     const newValue = oldValue & (~notValue);
-    if(notValue != 0) {
+    // Write-suppression is keyed on the source register INDEX (rs1 == x0), not its runtime
+    // value: a real register holding 0 must still perform the (value-preserving) CSR write
+    // and its side effects. Was `if(notValue != 0)`. Matches the csrrs handler.
+    if(rs1 != 0) {
       cpu.setCSR(immU, newValue, notValue);
     }
     registerSet.setRegister(rd, oldValue);
@@ -1358,6 +1426,7 @@ const j_TypeOpcodeTable: OpcodeTable<J_Type> = new Map([
     }
 
     cpu.next_pc = cpu.pc + imm;
+    cpu.branch_taken = true;
     cpu.cycles++;
   }]
 ]);
