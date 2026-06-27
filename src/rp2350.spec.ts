@@ -37,15 +37,20 @@ describe('RP2350', () => {
     });
   });
 
-  // NOTE (GhostLabs fork): blink_simple and hello_timer now PASS on the latest-upstream base. Two
-  // genuine RISC-V core bugs (found by lockstepping this engine against c1570's) were fixed:
+  // NOTE (GhostLabs fork): all three RISC-V firmware integration tests now PASS on the latest-
+  // upstream base. Two genuine RISC-V core bugs (found by lockstepping this engine against c1570's)
+  // were fixed first:
   //   * MEINEXT reset value — it must reset to NOIRQ, else the !NOIRQ interrupt gate took a phantom
   //     IRQ 0 the instant the firmware enabled interrupts (this is what stalled hello_timer).
   //   * MTVEC mode bits — trap targets must mask mtvec[1:0]; a vectored mtvec (RP2350 uses
   //     0x20000001) sent an exception to the odd address 0x20000001 and crashed (the pio_blink fault).
-  // pio_blink is still skipped: its crash is fixed, but driving GPIO from PIO on RP2350 needs the
-  // RP2350-specific PIO feature set ported from c1570 (GPIOBASE register for GPIO32, the 32-bit
-  // pin mask, IN_COUNT, and the RP2350 IRQ-index mode). See ROADMAP.md.
+  // pio_blink then needed the RP2350 PIO pin-window feature: the GPIOBASE register (0x168) re-bases a
+  // PIO block's internal 32-pin window onto chip GPIO16..47, which is how a PIO drives GPIO32. With
+  // GPIOBASE handled (plus the gpiobase offset in checkChangedPins and the 32-bit pad mask), GPIO32
+  // toggles. The remaining RP2350 PIO features c1570 also implemented — IN_COUNT masking, the PIO
+  // IRQ-index mode, neighbour-SM synchronous restart, FJOIN RX/TX — are not exercised by pio_blink
+  // (a plain counter-blink: pull/out/mov/set/jmp) and are deferred, each to land with its own test.
+  // See ROADMAP.md.
   describe('rp2350js regression tests', () => {
     it('should run blink_simple', () => {
       const rp2350 = new RP2350();
@@ -78,7 +83,7 @@ describe('RP2350', () => {
     }, 60000);
   });
 
-  it.skip('should run pio_blink', () => {
+  it('should run pio_blink', () => {
     const rp2350 = new RP2350();
     rp2350.loadBootrom(bootrom_rp2350_A2);
     const hex = fs.readFileSync("./demo/riscv_pio_blink/pio_blink.hex", 'utf-8');

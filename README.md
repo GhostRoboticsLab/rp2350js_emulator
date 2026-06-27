@@ -9,9 +9,11 @@ core.
 > **Status: early but real.** The RISC-V core boots and runs RV32IMAC + Zba/Zbb/Zbs/Zcb code and
 > passes a verified instruction-correctness suite. The RP2350 peripheral layer is now multi-chip
 > parameterized (`tsc` is clean), and the chip boots its A2 bootrom and runs real RISC-V firmware:
-> the **`blink_simple`** and **`hello_timer`** integration tests pass (the latter is a 250M-step run
-> driven by RP2350 timer interrupts). 347 tests pass; one firmware case (`pio_blink`) remains skipped
-> pending the RP2350 PIO feature port — see **[ROADMAP.md](./ROADMAP.md)**.
+> **all three** firmware integration tests pass — **`blink_simple`** (GPIO via SIO), **`hello_timer`**
+> (a 250M-step run driven by RP2350 timer interrupts), and **`pio_blink`** (two PIO blocks driving
+> GPIO3 and GPIO32, the latter through the RP2350 GPIOBASE pin-window). **All 348 tests pass, none
+> skipped.** Some RP2350 PIO features not yet exercised by firmware remain deferred — see
+> **[ROADMAP.md](./ROADMAP.md)**.
 
 ## Lineage & credit
 
@@ -58,7 +60,7 @@ debug aid rather than silently trapping `mcause=2`.
 
 ```bash
 npm install
-npm test       # 347 pass, 1 skipped (pio_blink; see ROADMAP). hello_timer takes ~22s.
+npm test       # 348 pass, 0 skipped. hello_timer takes ~22s (a 250M-step firmware run).
 ```
 
 The RISC-V correctness suite alone:

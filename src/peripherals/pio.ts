@@ -25,6 +25,10 @@ const IRQ1_INTE = 0x138; // Interrupt Enable for irq1
 const IRQ1_INTF = 0x13c; // Interrupt Force for irq1
 const IRQ1_INTS = 0x140; // Interrupt status after masking & forcing for irq1
 
+// RP2350-only: selects whether this PIO's internal 32-pin window starts at chip GPIO0 or GPIO16
+// (the GPIOBASE bit is bit 4, so the stored offset is 0 or 16). Lets one PIO drive GPIO16..47.
+const RP2350_GPIOBASE = 0x168;
+
 // State-machine specific registers
 const TXF0 = 0x010;
 const TXF1 = 0x014;
@@ -932,6 +936,9 @@ export class RPPIO extends BasePeripheral implements Peripheral {
   readonly dreqTx = this.index ? dreqTx1 : dreqTx0;
   // GPIO base offset for the PIO pin window (RP2350 GPIOBASE register; always 0 on RP2040).
   gpiobase = 0;
+  // RP2350 has 48 GPIOs, a movable PIO pin window (GPIOBASE) and a 32-bit pad mask; RP2040 has none
+  // of these. Gate the RP2350-only behaviour on the chip identifier rather than the concrete class.
+  readonly isRp2040 = this.rp2040.identifier === 'rp2040';
   readonly machines = [
     new StateMachine(this.rp2040, this, 0),
     new StateMachine(this.rp2040, this, 1),
@@ -1081,6 +1088,11 @@ export class RPPIO extends BasePeripheral implements Peripheral {
         return this.irq1IntForce;
       case IRQ1_INTS:
         return this.irq1IntStatus;
+      case RP2350_GPIOBASE:
+        if (!this.isRp2040) {
+          return this.gpiobase;
+        }
+        break;
     }
     return super.readUint32(offset);
   }
@@ -1171,6 +1183,13 @@ export class RPPIO extends BasePeripheral implements Peripheral {
         this.irq1IntForce = value & 0xfff;
         this.checkInterrupts();
         break;
+      case RP2350_GPIOBASE:
+        if (!this.isRp2040) {
+          this.gpiobase = value & 16;
+        } else {
+          super.writeUint32(offset, value);
+        }
+        break;
       default:
         super.writeUint32(offset, value);
     }
@@ -1179,14 +1198,18 @@ export class RPPIO extends BasePeripheral implements Peripheral {
   pinValuesChanged(value: number, firstPin: number, count: number) {
     // TODO: wrapping after pin 31
     const mask = count > 31 ? 0xffffffff : ((1 << count) - 1) << firstPin;
-    const newValue = ((this.pinValues & ~mask) | ((value << firstPin) & mask)) & 0x3fffffff;
+    const newValue =
+      ((this.pinValues & ~mask) | ((value << firstPin) & mask)) &
+      (this.isRp2040 ? 0x3fffffff : 0xffffffff);
     this.pinValues = newValue;
   }
 
   pinDirectionsChanged(value: number, firstPin: number, count: number) {
     // TODO: wrapping after pin 31
     const mask = count > 31 ? 0xffffffff : ((1 << count) - 1) << firstPin;
-    const newValue = ((this.pinDirections & ~mask) | ((value << firstPin) & mask)) & 0x3fffffff;
+    const newValue =
+      ((this.pinDirections & ~mask) | ((value << firstPin) & mask)) &
+      (this.isRp2040 ? 0x3fffffff : 0xffffffff);
     this.pinDirections = newValue;
   }
 
@@ -1210,11 +1233,17 @@ export class RPPIO extends BasePeripheral implements Peripheral {
       this.oldPinDirections = this.pinDirections;
       this.oldPinValues = this.pinValues;
 
-      // Notify GPIO about the changed pins
+      // Notify GPIO about the changed pins. `changedPins` lives in the PIO's internal 32-pin space;
+      // RP2350 re-bases that window onto chip GPIOs via GPIOBASE (`gpiobase`, always 0 on RP2040).
+      // (The old `1 << gpioIndex` over gpio.length aliased pins 32..47 back onto 0..15 — JS shifts
+      // are mod-32 — and never applied the offset, so GPIO16..47 were never notified.)
       const { gpio } = this.rp2040;
-      for (let gpioIndex = 0; gpioIndex < gpio.length; gpioIndex++) {
-        if (changedPins & (1 << gpioIndex)) {
-          gpio[gpioIndex].checkForUpdates();
+      for (let pinIndex = 0; pinIndex < 32; pinIndex++) {
+        if (changedPins & (1 << pinIndex)) {
+          const gpioIndex = pinIndex + this.gpiobase;
+          if (gpioIndex < gpio.length) {
+            gpio[gpioIndex].checkForUpdates();
+          }
         }
       }
     }

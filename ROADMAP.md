@@ -62,16 +62,39 @@ the first architectural divergence surfaced two real core bugs:
 `hello_timer` is now **un-skipped and passing** (250M-step run, exactly 19 timer-driven prints). The
 phantom-IRQ fix also confirms the earlier `!NOIRQ` IRQ-0 gate is correct *given a correct reset*.
 
-## Next — `pio_blink` (the last skipped integration test)
+## Done — `pio_blink` (PIO drives GPIO32 via GPIOBASE)
 
-Its early crash is fixed (the MTVEC mask above). What remains is the **RP2350-specific PIO feature
-set**, which c1570 implemented and upstream lacks — port it from his `pio.ts`:
+The early crash was fixed by the MTVEC mask above; the remaining gap was the RP2350 **PIO pin-window**
+feature. `pio_blink` runs the classic counter-blink (`pull / out y / mov x,y / set pins / jmp x--`)
+on two PIO blocks — one driving GPIO3/4, one driving GPIO32/33 — and asserts exactly two rising
+edges on each. GPIO32 is only reachable once a PIO block re-bases its internal 32-pin window:
 
-- **GPIOBASE register** (`0x168`, `gpiobase = value & 16`) — moves the PIO's 32-pin window so it can
-  drive GPIO32; also a `getPinValue`/`pinValuesChanged`/`checkChangedPins` index offset.
-- **32-bit pin mask** for RP2350 (upstream hardcodes the RP2040 `0x3fffffff` 30-bit mask).
-- **`IN_COUNT`** masking and the RP2350 **PIO IRQ-index mode** (`resolveIrqTarget`), plus the
-  neighbour state-machine synchronous restart.
+| Change | Why | Status |
+|---|---|---|
+| **GPIOBASE register** (`0x168`, `gpiobase = value & 16`) | re-bases the PIO's 32-pin window onto chip GPIO16..47, so internal pin 16 = GPIO32 | ✅ |
+| `checkChangedPins` offset (loop 0..31, `gpio[pinIndex + gpiobase]`) | the old loop did `1 << gpioIndex` over `gpio.length`, which aliases pins 32..47 onto 0..15 (JS shifts are mod-32) and never applied the offset — GPIO16..47 were never notified | ✅ |
+| **32-bit pad mask** (`isRp2040 ? 0x3fffffff : 0xffffffff`) | upstream hardcodes the RP2040 30-bit mask | ✅ |
+
+`pio_blink` is **un-skipped and passing** (gpio3toggle == 2, gpio32toggle == 2 over 2M steps; the
+SDK's free-SM allocator places the GPIO0..31 program on PIO2 and the GPIO32 program on PIO1). The
+surgical port deliberately does **not** adopt c1570's SM step-model rewrite (`curClockInt/Frac`,
+`remainingDelay`, `machinesRunning`): the blink program uses the default clock divider (1.0), at
+which the new fork's one-instruction-per-cycle model and c1570's divided model are identical, so the
+working RP2040 step model is left untouched (verified: 348/348 tests pass).
+
+## Next — remaining RP2350 PIO features (deferred, not yet exercised)
+
+c1570 also implemented these RP2350 PIO behaviours; none are exercised by `pio_blink`, so each is
+deferred to land with its own falsifiable test rather than ported unverified:
+
+- **`IN_COUNT`** masking — masks the low pins kept by `IN PINS` / `MOV x, PINS` (RP2350 only).
+- **PIO IRQ-index mode** (`resolveIrqTarget`) — `WAIT IRQ` / `IRQ` instructions can target a
+  neighbouring PIO block (prev/next) or use the relative-index encoding.
+- **Neighbour state-machine synchronous restart** — `CTRL` bits 16..25 enable/disable/clk-restart
+  SMs across adjacent PIO blocks atomically.
+- **`FJOIN_RX`/`FJOIN_TX`** — joined 8-deep RX/TX FIFOs.
+- **`WAIT PIN` gpiobase offset** — the pin-relative wait source should also honour `gpiobase`
+  (subtle: the absolute-GPIO wait source must not), so it is staged separately.
 
 Each peripheral's parameterization is also a natural **upstream PR to wokwi/rp2040js** ("make the
 peripheral layer multi-chip"), see below.
