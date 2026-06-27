@@ -1,6 +1,8 @@
 The MIT License (MIT)
 
-Copyright (c) 2021 Uri Shaked
+Copyright (c) 2021 Uri Shaked (rp2040js, the RP2040 emulator base)
+Copyright (c) 2024-2025 c1570 (RP2350 / Hazard3 RISC-V emulation)
+Copyright (c) 2026 GhostRoboticsLab / Pratheek Balakrishna (RP2350 RISC-V fixes, upstream port)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

@@ -1,128 +1,65 @@
-![](../../actions/workflows/ci-test.yml/badge.svg) ![](../../actions/workflows/ci-micropython.yml/badge.svg) ![](../../actions/workflows/ci-pico-sdk.yml/badge.svg)
+![CI](../../actions/workflows/ci.yml/badge.svg)
 
-# rp2040js
+# rp2350js — RP2350 (Hazard3 RISC-V) emulator
 
-Raspberry Pi Pico Emulator for the [Wokwi Simulation Platform](https://wokwi.com). It blinks, runs Arduino code, and even the MicroPython REPL!
+A fork of [wokwi/rp2040js](https://github.com/wokwi/rp2040js) that emulates the **RP2350**
+(Raspberry Pi Pico 2) **Hazard3 RISC-V** cores, with a corrected and tested RISC-V instruction
+core.
 
-## Online examples
+> **Status: early but real.** The RISC-V core boots and runs RV32IMAC + Zba/Zbb/Zbs/Zcb code and
+> passes a verified instruction-correctness suite (345 tests). The RP2350 *peripheral* layer is
+> being re-based onto the latest upstream incrementally — see **[ROADMAP.md](./ROADMAP.md)**.
 
-If you are just looking to play around with the Raspberry Pi Pico Simulator, check out the Wokwi Simulator:
+## Lineage & credit
 
-- [Raspberry Pi Pico Traffic Light](https://wokwi.com/arduino/projects/297322571959894536)
-- [LCD1602 Hello World](https://wokwi.com/arduino/projects/297323005822894602)
-- [MicroPython Blink](https://wokwi.com/arduino/projects/300504213470839309)
-- [MicroPython 7-Segment Counter](https://wokwi.com/arduino/projects/300210834979684872)
+Three links in a chain, all MIT, all credited (see **[CREDITS.md](./CREDITS.md)**):
 
-For more information, take a look at the [wokwi-pi-pico docs](https://docs.wokwi.com/parts/wokwi-pi-pico) and the [Pi Pico MicroPython Guide](https://docs.wokwi.com/guides/micropython).
+1. **[wokwi/rp2040js](https://github.com/wokwi/rp2040js)** (Uri Shaked) — the RP2040 emulator base.
+2. **[c1570/rp2040js](https://github.com/c1570/rp2040js)** (`rp2350js/WIP`) — added the entire
+   RP2350 / Hazard3 RISC-V core (~50 h). Imported here with authorship preserved.
+3. **This fork** — re-bases c1570's RP2350 work onto the latest upstream and fixes the RISC-V core.
 
-If you want to develop your own application using the Raspberry Pi Pico simulator, the following examples may be helpful:
+## What this fork fixes in the RISC-V core
 
-- [Blink LEDs with RP2040js, from scratch](https://stackblitz.com/edit/rp2040js-blink?file=index.ts) - Press "Run" and patiently wait for the code to compile ;-)
+c1570's core is an honest WIP; an adversarial spec review (7 ISA-area reviewers, each finding
+independently verified) surfaced 19 confirmed defects. We fixed them, each with a falsifiable test:
 
-## Run the demo project
+- **The whole RV32M multiply family.** `MUL` used JavaScript's float64 `*`, silently wrong for any
+  product above 2⁵³ (~95% of random operands); `MULH`/`MULHU` lost precision; **`MULHSU` was
+  undecoded and crashed the core.** Now exact via `Math.imul` / `BigInt`.
+- **Synchronous trap entry.** `ECALL`/`EBREAK` skipped the handler's first instruction (landed at
+  `mtvec + ilen`) — would break a FreeRTOS `portYIELD`. Fixed.
+- **Hazard3 external IRQ 0** (TIMER0_IRQ_0) was never delivered (NOIRQ tested via `irq==0` instead
+  of the `meinext` sign bit). Fixed.
+- `SLTIU` immediate sign-extension, `JALR` LSB masking, `CSRRC` write gating, warm-reset PC,
+  `mip.MEIP` preemption gating, the trap-entry `mstatus` update, and the **Zcb** compressed
+  instructions the RP2350 bootrom needs.
 
-### Native code
+Every fix has a regression test in
+[`src/riscv/test/cpu-fixes.spec.ts`](./src/riscv/test/cpu-fixes.spec.ts), each **proven to fail on
+the pre-fix engine** (negative control). The illegal-instruction `throw` is kept deliberately as a
+debug aid rather than silently trapping `mcause=2`.
 
-You'd need to get `hello_uart.hex` by building it from the [pico-examples repo](https://github.com/raspberrypi/pico-examples/tree/master/uart/hello_uart), then copy it to the rp2040js root directory and run:
+## Quick start
 
-```
+```bash
 npm install
-npm start
+npm test       # 345 pass, 3 skipped (chip-level integration; see ROADMAP)
 ```
 
-You can also specify the path to the image on the command line and/or load an UF2 image:
+The RISC-V correctness suite alone:
 
-```sh
-npm run start -- --image ./my-pico-project.uf2
+```bash
+npx vitest run src/riscv
 ```
 
-A GDB server will be available on port 3333, and the data written to UART0 will be printed
-to the console.
+## Layout
 
-### MicroPython code
-
-To run the MicroPython demo, first download [RPI_PICO-20230426-v1.20.0.uf2](https://micropython.org/resources/firmware/RPI_PICO-20230426-v1.20.0.uf2), place it in the rp2040js root directory, then run:
-
-```
-npm install
-npm run start:micropython
-```
-
-and enjoy the MicroPython REPL! Quit the REPL with Ctrl+X. A different MicroPython UF2 image can be loaded by supplying the `--image` option:
-
-```
-npm run start:micropython -- --image=my_image.uf2
-```
-
-A GDB server on port 3333 can be enabled by specifying the `--gdb` flag:
-
-```
-npm run start:micropython -- --gdb
-```
-
-For using the MicroPython demo code in tests, the `--expect-text` can come handy: it will look for the given text in the serial output and exit with code 0 if found, or 1 if not found. You can find an example in [the MicroPython CI test](./.github/workflows/ci-micropython.yml).
-
-#### Filesystem support
-
-With MicroPython, you can use the filesystem on the Pico. This becomes useful as more than one script file is used in your code. Just put a [LittleFS](https://github.com/littlefs-project/littlefs) formatted filesystem image called `littlefs.img` into the rp2040js root directory, and your `main.py` will be automatically started from there.
-
-A simple way to create a suitable LittleFS image containing your script files is outlined in [create_littlefs_image.py](https://github.com/tomods/GrinderController/blob/358ad3e0f795d8cc0bdf4f21bb35f806871d433f/tools/create_littlefs_image.py).
-So, using [littlefs-python](https://pypi.org/project/littlefs-python/), you can do the following:
-
-```python
-from littlefs import LittleFS
-files = ['your.py', 'files.py', 'here.py', 'main.py']
-output_image = 'output/littlefs.img'  # symlinked/copied to rp2040js root directory
-lfs = LittleFS(block_size=4096, block_count=352, prog_size=256)
-for filename in files:
-    with open(filename, 'rb') as src_file, lfs.open(filename, 'w') as lfs_file:
-        lfs_file.write(src_file.read())
-with open(output_image, 'wb') as fh:
-    fh.write(lfs.context.buffer)
-```
-
-Other ways of creating LittleFS images can be found [here](https://github.com/wokwi/littlefs-wasm) or [here](https://github.com/littlefs-project/littlefs#related-projects).
-
-Currently, the filesystem is not writeable, as the SSI peripheral required for flash writing is not implemented yet. If you're interested in hacking, see the discussion in https://github.com/wokwi/rp2040js/issues/88 for a workaround.
-
-### CircuitPython code
-
-To run the CircuitPython demo, you can follow the directions above for MicroPython, except download [adafruit-circuitpython-raspberry_pi_pico-en_US-8.0.2.uf2](https://adafruit-circuit-python.s3.amazonaws.com/bin/raspberry_pi_pico/en_US/adafruit-circuitpython-raspberry_pi_pico-en_US-8.0.2.uf2) instead of the MicroPython UF2 file. Place it in the rp2040js root directory, then run:
-
-```
-npm install
-npm run start:circuitpython
-```
-
-and start the CircuitPython REPL! The rest of the experience is the same as the MicroPython demo (Ctrl+X to exit, using the `--image` and
-`--gdb` options, etc).
-
-#### Filesystem support
-
-For CircuitPython, you can create a FAT12 filesystem in Linux using the `truncate` and `mkfs.vfat` utilities:
-
-```shell
-truncate fat12.img -s 1M  # make the image file
-mkfs.vfat -F12 -S512 fat12.img  # create the FAT12 filesystem
-```
-
-You can then mount the filesystem image and add files to it:
-
-```shell
-mkdir fat12  # create the mounting folder if needed
-sudo mount -o loop fat12.img fat12/  # mount the filesystem to the folder
-sudo cp code.py fat12/  # copy code.py to the filesystem
-sudo umount fat12/  # unmount the filesystem
-```
-
-While CircuitPython does not typically use a writeable filesystem, note that this functionality is unavailable (see MicroPython filesystem
-support section for more details).
-
-## Learn more
-
-- [Live-coding stream playlist](https://www.youtube.com/playlist?list=PLLomdjsHtJTxT-vdJHwa3z62dFXZnzYBm)
-- [Hackaday project page](https://hackaday.io/project/177082-raspberry-pi-pico-emulator)
+- `src/riscv/` — the Hazard3 RISC-V CPU, assembler, and tests (c1570's, with our fixes).
+- `src/rp2350.ts`, `src/rpchip.ts`, `src/*_rp2350.ts`, `src/peripherals/*_rp2350.ts` — the RP2350
+  chip and its peripheral variants (c1570's).
+- everything else — upstream wokwi/rp2040js (RP2040).
 
 ## License
 
-Released under the MIT licence. Copyright (c) 2021-2023, Uri Shaked.
+MIT — see [LICENSE](./LICENSE) and [CREDITS.md](./CREDITS.md).
