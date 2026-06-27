@@ -7,8 +7,10 @@ A fork of [wokwi/rp2040js](https://github.com/wokwi/rp2040js) that emulates the 
 core.
 
 > **Status: early but real.** The RISC-V core boots and runs RV32IMAC + Zba/Zbb/Zbs/Zcb code and
-> passes a verified instruction-correctness suite (345 tests). The RP2350 *peripheral* layer is
-> being re-based onto the latest upstream incrementally — see **[ROADMAP.md](./ROADMAP.md)**.
+> passes a verified instruction-correctness suite. The RP2350 peripheral layer is now multi-chip
+> parameterized (`tsc` is clean and the chip boots its A2 bootrom + a real RISC-V firmware — the
+> `blink_simple` integration test passes). 346 tests pass; two deeper firmware-integration cases
+> remain skipped (timing / PIO fidelity) — see **[ROADMAP.md](./ROADMAP.md)**.
 
 ## Lineage & credit
 
@@ -44,7 +46,7 @@ debug aid rather than silently trapping `mcause=2`.
 
 ```bash
 npm install
-npm test       # 345 pass, 3 skipped (chip-level integration; see ROADMAP)
+npm test       # 346 pass, 2 skipped (deeper chip-level integration; see ROADMAP)
 ```
 
 The RISC-V correctness suite alone:

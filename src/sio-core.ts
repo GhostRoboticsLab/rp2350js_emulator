@@ -1,5 +1,5 @@
 import { IRPChip } from './rpchip.js';
-import { RP2040 } from './rp2040.js';
+import type { RP2350 } from './rp2350.js';
 import { Core } from './core.js';
 import { Interpolator } from './interpolator.js';
 import { FIFO } from './utils/fifo.js';
@@ -360,12 +360,13 @@ export class RPSIOCore {
       }
     }
     this.divCSR = 0b11;
+    // RPSIOCore is RP2350-only (instantiated by sio_rp2350); the dual RISC-V cores live on RP2350.
     switch (this.core) {
       case Core.Core0:
-        (this.rp2040 as RP2040).core0.cycles += 8;
+        (this.rp2040 as RP2350).core0.cycles += 8;
         break;
       case Core.Core1:
-        (this.rp2040 as RP2040).core1.cycles += 8;
+        (this.rp2040 as RP2350).core1.cycles += 8;
         break;
     }
   }

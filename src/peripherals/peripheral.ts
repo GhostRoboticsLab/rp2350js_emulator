@@ -1,4 +1,4 @@
-import { RP2040 } from '../rp2040.js';
+import { IRPChip } from '../rpchip.js';
 
 const ATOMIC_NORMAL = 0;
 const ATOMIC_XOR = 1;
@@ -29,7 +29,7 @@ export class BasePeripheral implements Peripheral {
   protected rawWriteValue = 0;
 
   constructor(
-    protected rp2040: RP2040,
+    protected rp2040: IRPChip,
     readonly name: string,
   ) {}
 

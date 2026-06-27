@@ -1,6 +1,6 @@
 import { IAlarm } from '../clock/clock.js';
 import { IRQ } from '../irq.js';
-import { RP2040 } from '../rp2040.js';
+import { IRPChip } from '../rpchip.js';
 import {
   parseSetupPacket,
   StandardRequest,
@@ -252,7 +252,7 @@ export class RPUSBController extends BasePeripheral {
     return (this.intRaw & this.intEnable) | this.intForce;
   }
 
-  constructor(rp2040: RP2040, name: string) {
+  constructor(rp2040: IRPChip, name: string, readonly usbctrl_irq: number = IRQ.USBCTRL) {
     super(rp2040, name);
     const clock = rp2040.clock;
     this.endpointReadAlarms = [];
@@ -547,7 +547,7 @@ export class RPUSBController extends BasePeripheral {
 
   private checkInterrupts() {
     const { intStatus } = this;
-    this.rp2040.setInterrupt(IRQ.USBCTRL, !!intStatus);
+    this.rp2040.setInterrupt(this.usbctrl_irq, !!intStatus);
   }
 
   resetDevice() {

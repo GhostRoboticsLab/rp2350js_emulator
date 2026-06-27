@@ -116,7 +116,7 @@ export class RP2350 implements IRPChip {
     0x40008: new RP2350SysCfg(this, 'SYSCFG'),
     0x40010: new RPClocks(this, 'CLOCKS_BASE'),
     0x40018: new UnimplementedPeripheral(this, 'PSM_BASE'),
-    0x40020: new RPReset(this, 'RESETS_BASE'),
+    0x40020: new RPReset(this, 'RESETS_BASE', 0x1fffffff),
     0x40028: new RPIO(this, 'IO_BANK0_BASE'),
     0x40030: new UnimplementedPeripheral(this, 'IO_QSPI_BASE'),
     0x40038: new RPPADS(this, 'PADS_BANK0_BASE', 'bank0'),

@@ -1,5 +1,5 @@
 import { IRQ } from '../irq.js';
-import { RP2040 } from '../rp2040.js';
+import { IRPChip } from '../rpchip.js';
 import { FIFO } from '../utils/fifo.js';
 import { DREQChannel } from './dma.js';
 import { BasePeripheral, Peripheral } from './peripheral.js';
@@ -96,7 +96,7 @@ export class RPADC extends BasePeripheral implements Peripheral {
   };
 
   readonly fifo = new FIFO(4);
-  readonly dreq = DREQChannel.DREQ_ADC;
+  readonly dreq: number;
 
   // Registers
   cs = 0;
@@ -151,8 +151,14 @@ export class RPADC extends BasePeripheral implements Peripheral {
     this.cs |= (channel & CS_AINSEL_SHIFT) << CS_AINSEL_SHIFT;
   }
 
-  constructor(rp2040: RP2040, name: string) {
+  constructor(
+    rp2040: IRPChip,
+    name: string,
+    readonly adc_interrupt: number = IRQ.ADC_FIFO,
+    adc_dreq: number = DREQChannel.DREQ_ADC,
+  ) {
     super(rp2040, name);
+    this.dreq = adc_dreq;
     this.sampleAlarm = this.rp2040.clock.createAlarm(() =>
       this.completeADCRead(this.channelValues[this.currentChannel], false),
     );
@@ -164,7 +170,7 @@ export class RPADC extends BasePeripheral implements Peripheral {
   }
 
   checkInterrupts() {
-    this.rp2040.setInterrupt(IRQ.ADC_FIFO, !!this.intStatus);
+    this.rp2040.setInterrupt(this.adc_interrupt, !!this.intStatus);
   }
 
   startADCRead() {
@@ -176,9 +182,9 @@ export class RPADC extends BasePeripheral implements Peripheral {
     if (this.fcs & FCS_DREQ_EN) {
       const thres = (this.fcs >> FCS_THRESH_SHIFT) & FCS_THRES_MASK;
       if (this.fifo.itemCount >= thres) {
-        this.rp2040.dma.setDREQ(this.dreq);
+        this.rp2040.dma_setDREQ(this.dreq);
       } else {
-        this.rp2040.dma.clearDREQ(this.dreq);
+        this.rp2040.dma_clearDREQ(this.dreq);
       }
     }
   }

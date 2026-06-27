@@ -2,6 +2,7 @@ import { IClock } from '../clock/clock.js';
 import { IRQ } from '../irq.js';
 import { Timer32, Timer32PeriodicAlarm, TimerMode } from '../utils/timer32.js';
 import { DREQChannel } from './dma.js';
+import { IRPChip } from '../rpchip.js';
 import { BasePeripheral, Peripheral } from './peripheral.js';
 
 /** Control and status register */
@@ -283,6 +284,17 @@ export class RPPWM extends BasePeripheral implements Peripheral {
   gpioValue = 0;
   gpioDirection = 0;
 
+  // pwm_wrap_irq: the PWM wrap IRQ (RP2040 PWM_WRAP vs RP2350 PWM_IRQ_WRAP_0).
+  // pwm_dreq_base: first PWM-wrap DREQ; slice i raises pwm_dreq_base + i.
+  constructor(
+    rp2040: IRPChip,
+    name: string,
+    readonly pwm_wrap_irq: number = IRQ.PWM_WRAP,
+    readonly pwm_dreq_base: number = DREQChannel.DREQ_PWM_WRAP0,
+  ) {
+    super(rp2040, name);
+  }
+
   get intStatus() {
     return (this.intRaw & this.intEnable) | this.intForce;
   }
@@ -359,11 +371,11 @@ export class RPPWM extends BasePeripheral implements Peripheral {
     this.checkInterrupts();
 
     // We also set the DMA Request (DREQ) for the channel
-    this.rp2040.dma.setDREQ(DREQChannel.DREQ_PWM_WRAP0 + index);
+    this.rp2040.dma_setDREQ(this.pwm_dreq_base + index);
   }
 
   checkInterrupts() {
-    this.rp2040.setInterrupt(IRQ.PWM_WRAP, !!this.intStatus);
+    this.rp2040.setInterrupt(this.pwm_wrap_irq, !!this.intStatus);
   }
 
   gpioSet(index: number, value: boolean) {

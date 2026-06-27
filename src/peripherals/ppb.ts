@@ -56,8 +56,8 @@ export class RPPPB extends BasePeripheral implements Peripheral {
   readonly systickAlarm = new Timer32PeriodicAlarm(this.systickTimer, () => {
     this.systickCountFlag = true;
     if (this.systickIntEnable) {
-      this.rp2040.core.pendingSystick = true;
-      this.rp2040.core.interruptsUpdated = true;
+      (this.rp2040 as RP2040).core.pendingSystick = true;
+      (this.rp2040 as RP2040).core.interruptsUpdated = true;
     }
     this.systickTimer.set(this.systickReload);
   });
@@ -79,7 +79,7 @@ export class RPPPB extends BasePeripheral implements Peripheral {
 
   readUint32(offset: number) {
     const { rp2040 } = this;
-    const { core } = rp2040;
+    const core = (rp2040 as RP2040).core;
 
     switch (offset) {
       case CPUID:
@@ -159,7 +159,7 @@ export class RPPPB extends BasePeripheral implements Peripheral {
 
   writeUint32(offset: number, value: number) {
     const { rp2040 } = this;
-    const { core } = rp2040;
+    const core = (rp2040 as RP2040).core;
 
     const hardwareInterruptMask = (1 << MAX_HARDWARE_IRQ) - 1;
 

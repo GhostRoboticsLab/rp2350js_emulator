@@ -1,4 +1,4 @@
-import { RP2040 } from '../rp2040.js';
+import { IRPChip } from '../rpchip.js';
 import { Timer32, Timer32PeriodicAlarm, TimerMode } from '../utils/timer32.js';
 import { BasePeripheral, Peripheral } from './peripheral.js';
 
@@ -60,7 +60,7 @@ export class RPWatchdog extends BasePeripheral implements Peripheral {
   };
 
   // User provided
-  constructor(rp2040: RP2040, name: string) {
+  constructor(rp2040: IRPChip, name: string) {
     super(rp2040, name);
     this.timer = new Timer32(rp2040.clock, TICK_FREQUENCY);
     this.timer.mode = TimerMode.Decrement;

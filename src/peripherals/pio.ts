@@ -1,4 +1,4 @@
-import { RP2040 } from '../rp2040.js';
+import { IRPChip } from '../rpchip.js';
 import { FIFO } from '../utils/fifo.js';
 import { DREQChannel } from './dma.js';
 import { BasePeripheral, Peripheral } from './peripheral.js';
@@ -153,11 +153,15 @@ export class StateMachine {
   waitPolarity = false;
   waitDelay = -1;
 
-  readonly dreqRx = this.pio.dreqRx[this.index];
-  readonly dreqTx = this.pio.dreqTx[this.index];
+  // RP2350 numbers PIO DREQs as contiguous per-block bases (dreq*_base + state-machine index);
+  // RP2040 uses fixed per-block arrays. Prefer the base when the chip supplied one.
+  readonly dreqRx =
+    this.pio.dreqRx_base !== undefined ? this.pio.dreqRx_base + this.index : this.pio.dreqRx[this.index];
+  readonly dreqTx =
+    this.pio.dreqTx_base !== undefined ? this.pio.dreqTx_base + this.index : this.pio.dreqTx[this.index];
 
   constructor(
-    readonly rp2040: RP2040,
+    readonly rp2040: IRPChip,
     readonly pio: RPPIO,
     readonly index: number,
   ) {
@@ -167,17 +171,17 @@ export class StateMachine {
 
   private updateDMATx() {
     if (this.txFIFO.full) {
-      this.rp2040.dma.clearDREQ(this.dreqTx);
+      this.rp2040.dma_clearDREQ(this.dreqTx);
     } else {
-      this.rp2040.dma.setDREQ(this.dreqTx);
+      this.rp2040.dma_setDREQ(this.dreqTx);
     }
   }
 
   private updateDMARx() {
     if (this.rxFIFO.empty) {
-      this.rp2040.dma.clearDREQ(this.dreqRx);
+      this.rp2040.dma_clearDREQ(this.dreqRx);
     } else {
-      this.rp2040.dma.setDREQ(this.dreqRx);
+      this.rp2040.dma_setDREQ(this.dreqRx);
     }
   }
 
@@ -268,7 +272,8 @@ export class StateMachine {
   }
 
   get inPins() {
-    const { gpioValues } = this.rp2040;
+    // Read the 32-pin window this PIO block sees (RP2350 can re-base it via GPIOBASE; 0 on RP2040).
+    const gpioValues = this.rp2040.gpioValues(this.pio.gpiobase);
     const { inBase } = this;
     return inBase ? (gpioValues << (32 - inBase)) | (gpioValues >>> inBase) : gpioValues;
   }
@@ -925,6 +930,8 @@ export class RPPIO extends BasePeripheral implements Peripheral {
   readonly instructions = new Uint32Array(32);
   readonly dreqRx = this.index ? dreqRx1 : dreqRx0;
   readonly dreqTx = this.index ? dreqTx1 : dreqTx0;
+  // GPIO base offset for the PIO pin window (RP2350 GPIOBASE register; always 0 on RP2040).
+  gpiobase = 0;
   readonly machines = [
     new StateMachine(this.rp2040, this, 0),
     new StateMachine(this.rp2040, this, 1),
@@ -950,12 +957,29 @@ export class RPPIO extends BasePeripheral implements Peripheral {
   irq1IntForce = 0;
 
   constructor(
-    rp2040: RP2040,
+    rp2040: IRPChip,
     name: string,
     readonly firstIrq: number,
     readonly index: number,
+    // RP2350 supplies per-block DREQ bases (RP2040 leaves these undefined and uses dreqRx/dreqTx).
+    readonly dreqRx_base?: number,
+    readonly dreqTx_base?: number,
   ) {
     super(rp2040, name);
+  }
+
+  // Read a chip GPIO's PIO-driven output / direction. RP2350 can re-base the PIO pin window via the
+  // GPIOBASE register; that offset is modelled by `gpiobase` (0 on RP2040).
+  getPinValue(chip_gpio_index: number): boolean {
+    const index = chip_gpio_index - this.gpiobase;
+    if (index < 0 || index > 31) return false;
+    return !!(this.pinValues & (1 << index));
+  }
+
+  getPinOutputEnabled(chip_gpio_index: number): boolean {
+    const index = chip_gpio_index - this.gpiobase;
+    if (index < 0 || index > 31) return false;
+    return !!(this.pinDirections & (1 << index));
   }
 
   get intRaw() {

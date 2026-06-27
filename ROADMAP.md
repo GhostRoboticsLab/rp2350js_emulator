@@ -1,8 +1,8 @@
 # Roadmap
 
 This fork takes c1570's RP2350 / Hazard3 RISC-V work and re-bases it onto the **latest** upstream
-wokwi/rp2040js, then hardens it. The RISC-V *core* is in good shape; the RP2350 *peripheral* layer
-is the main outstanding work.
+wokwi/rp2040js, then hardens it. The RISC-V *core* is corrected and tested, and the RP2350
+*peripheral* layer is now parameterized (`tsc` is clean and the chip boots a real firmware).
 
 ## Done — RISC-V core correctness
 
@@ -27,25 +27,40 @@ falsifiable tests (`src/riscv/test/cpu-fixes.spec.ts`).
 | RVC | Zcb (`c.lbu/lhu/lh/sb/sh`, `c.zext/sext.b/h`, `c.mul`, `c.not`) | ✅ completed |
 | Trap | illegal instruction `throw`s instead of `mcause=2` | ⏸ intentional debug aid |
 
-## Next — RP2350 peripheral parameterization (the main work)
+## Done — RP2350 peripheral parameterization (multi-chip)
 
-c1570 made the peripheral layer chip-aware: each peripheral takes its **IRQ number and DMA DREQ
-channels** as constructor parameters (RP2350's differ from RP2040's), routed through an `IRPChip`
-interface. On *this* (latest-upstream) base the shared peripherals are still RP2040-parameterized,
-so:
+The peripheral layer is now chip-aware. `RP2040` and `RP2350` both implement a shared **`IRPChip`**
+interface, peripherals depend on `IRPChip` instead of the concrete chip, and `GPIOPin` delegates its
+function-select → peripheral-output dispatch to the chip (so each chip owns its own function map —
+RP2350 adds `FUNCTION_PIO2`). `npx tsc --noEmit` is **clean** (was 63 errors).
 
-- **Type-clean the build** (`npm run build` / `tsc`). The engine *runs* (the test suite is green
-  via vitest, which transpiles without type-checking), but `tsc` still reports the `IRPChip`-vs-
-  `RP2040` and constructor-arity mismatches. Porting the `IRPChip` abstraction + optional
-  IRQ/DREQ parameters onto the upstream peripherals resolves these.
-- **Un-skip the three chip-level integration tests** in `src/rp2350.spec.ts` (`blink_simple`,
-  `hello_timer`, `pio_blink`). They assert c1570's exact GPIO/UART behaviour and currently fail
-  **identically on the pristine import** — i.e. they need the RP2350-parameterized peripherals,
-  not a CPU fix.
+| Area | Change | Status |
+|---|---|---|
+| Core | `RP2040 implements IRPChip`; `BasePeripheral` holds `IRPChip` | ✅ |
+| GPIO | `GPIOPin` → narrow `IGPIOChipHost`; chip-owned output dispatch; `FUNCTION_PIO2` | ✅ |
+| RESETS | `reset_mask` per-chip (RP2350 = `0x1fffffff`, 29 blocks) — **was the boot-hang** | ✅ |
+| TIMER | `timer_irq_base` param + RP2350 INTR/INTE/INTF/INTS offsets (shifted +8) | ✅ |
+| PWM / ADC / USB | `IRQ`/`DREQ` base constructor params | ✅ |
+| PIO | `IRPChip`, `dreq{Rx,Tx}_base`, `getPinValue`/`getPinOutputEnabled`, `gpiobase` field | ✅ |
+| UART / SPI / I²C | `IRPChip`; numeric DREQ ids (the two chips' `DREQChannel` enums differ) | ✅ |
+| DMA routing | peripherals raise DREQ via `IRPChip.dma_{set,clear}DREQ` | ✅ |
 
-Each peripheral's parameterization (ADC, I²C, PWM, SPI, PIO, TIMER, UART, DMA, …) is a small,
-self-contained change — and a natural **upstream PR to wokwi/rp2040js** ("make the peripheral layer
-multi-chip"), see below.
+The **`blink_simple`** integration test now passes (RP2350 boots its A2 bootrom, runs RISC-V
+firmware, drives GPIO via SIO). The RESETS `reset_mask` fix was the boot-blocker: the bootrom
+de-asserts a high-numbered reset block and spins on `RESET_DONE` for it.
+
+## Next — remaining RP2350 fidelity (two skipped integration tests)
+
+- **`hello_timer`** — the RP2350 TIMER interrupt now fires (offset + IRQ parameterization works; it
+  went from 0 → working repeats), but the exact repeat count over the 250M-step loop depends on the
+  emulator's long-run idle/clock-stepping model, and that loop runs ~20 s+ (too slow for CI as
+  written). Needs an idle fast-forward (advance the clock to the next scheduled alarm when both
+  cores are halted) and a faster test harness.
+- **`pio_blink`** — needs RP2350 PIO **GPIOBASE** modelling (the firmware drives GPIO32, outside the
+  low 32-pin window) plus an unresolved misaligned-PC fault early in this firmware.
+
+Each peripheral's parameterization is also a natural **upstream PR to wokwi/rp2040js** ("make the
+peripheral layer multi-chip"), see below.
 
 ## Later — upstreaming to Wokwi
 

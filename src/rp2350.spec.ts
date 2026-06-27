@@ -37,14 +37,17 @@ describe('RP2350', () => {
     });
   });
 
-  // NOTE (GhostLabs fork): these three firmware-integration cases are SKIPPED for now. They
-  // assert c1570's exact GPIO/UART behaviour, which depends on his RP2350-specific peripheral
-  // layer (per-peripheral IRQ/DREQ parameterization). This fork sits on the LATEST wokwi/rp2040js
-  // base, whose peripherals are not yet RP2350-parameterized, so these fail identically on the
-  // pristine import too - NOT a RISC-V core regression (the core fixes are unit-tested in
-  // src/riscv/test/cpu-fixes.spec.ts). Un-skip once the peripheral parameterization lands (ROADMAP).
+  // NOTE (GhostLabs fork): blink_simple now PASSES on the latest-upstream base — the RP2350
+  // peripheral parameterization (IRPChip multi-chip refactor, RESETS reset_mask, per-peripheral
+  // IRQ/DREQ) has landed. The remaining two are kept skipped for specific, documented reasons (see
+  // each, and ROADMAP.md):
+  //   - hello_timer: the RP2350 TIMER interrupt now fires (offset/IRQ parameterization works), but
+  //     the exact repeat count depends on the emulator's long-run idle/clock-stepping model, and
+  //     the 250M-step loop runs ~20s+ (too slow for CI as written).
+  //   - pio_blink: needs RP2350 PIO GPIOBASE modelling (drives GPIO32) plus an unresolved
+  //     misaligned-PC fault early in this firmware.
   describe('rp2350js regression tests', () => {
-    it.skip('should run blink_simple', () => {
+    it('should run blink_simple', () => {
       const rp2350 = new RP2350();
       rp2350.loadBootrom(bootrom_rp2350_A2);
       const hex = fs.readFileSync("./demo/riscv_blink/blink_simple.hex", 'utf-8');

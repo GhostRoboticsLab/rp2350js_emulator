@@ -471,6 +471,8 @@ export class CPU {
     switch(csr) {
       case 0x300: // MSTATUS
           if((value & ~this.csrs[csr]) & 0b1000) this.interruptsUpdated = true; // MSTATUS.MIE has been set
+          this.csrs[csr] = value;
+          return;
       case 0x305: // MTVEC
           this.csrs[csr] = value;
           return;
@@ -977,7 +979,7 @@ const opcode0x33func3Table: FuncTable<R_Type> = new Map([
       // instead of flooring, so it returned 0 for every small negative product. BigInt is exact
       // and sign-correct.
       const product = BigInt(rs1Value) * BigInt(registerSet.getRegister(rs2));
-      registerSet.setRegisterU(rd, Number((product >> 32n) & 0xffffffffn));
+      registerSet.setRegisterU(rd, Number((product >> BigInt(32)) & BigInt(0xffffffff)));
     } else if(func7 === 0x14) { // bset (Zbs)
       const index = rs2Value & 31;
       const result = rs1Value | (1 << index);
@@ -1021,7 +1023,7 @@ const opcode0x33func3Table: FuncTable<R_Type> = new Map([
       // and HARD-ABORTED the core. MULHSU is mandatory in the M extension (Hazard3 implements
       // it) and GCC emits it for mixed-sign 64-bit multiplies. rs1 signed, rs2 unsigned.
       const product = BigInt(rs1Value) * BigInt(registerSet.getRegisterU(rs2));
-      registerSet.setRegisterU(rd, Number((product >> 32n) & 0xffffffffn));
+      registerSet.setRegisterU(rd, Number((product >> BigInt(32)) & BigInt(0xffffffff)));
     } else throw Error(`Unknown instruction, func7: 0x${func7.toString(16)}`);
   }],
 
@@ -1039,7 +1041,7 @@ const opcode0x33func3Table: FuncTable<R_Type> = new Map([
       // Upper 32 bits of the unsigned*unsigned 64-bit product. Float64 division lost precision
       // near 2^32 boundaries (off-by-one high word). BigInt is exact.
       const product = BigInt(rs1Value >>> 0) * BigInt(rs2Value >>> 0);
-      registerSet.setRegisterU(rd, Number((product >> 32n) & 0xffffffffn));
+      registerSet.setRegisterU(rd, Number((product >> BigInt(32)) & BigInt(0xffffffff)));
     } else throw Error(`Unknown instruction, func7: 0x${func7.toString(16)}`);
   }],
 
