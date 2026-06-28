@@ -1,0 +1,45 @@
+name: "Feature request / enhancement"
+description: "Propose a new capability — an unimplemented RP2350 peripheral feature, an ISA extension, tooling, or an API improvement."
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping shape the fork.
+
+        **Check [ROADMAP.md](https://github.com/GhostRoboticsLab/rp2350js_emulator/blob/main/ROADMAP.md) first.** Several RP2350 features are *already designed and deliberately deferred* — they'll land each with its own falsifiable test rather than be ported unverified. If your request is one of these (e.g. PIO `IN_COUNT` masking, PIO IRQ-index mode / `resolveIrqTarget`, neighbour state-machine synchronous restart, `FJOIN_RX/TX` joined FIFOs, the `WAIT PIN` gpiobase offset, or the intentional illegal-instruction `throw`), please **upvote / comment** rather than open a duplicate, and tell us the firmware that needs it — firmware-driven demand is what moves a deferred item up the list.
+  - type: textarea
+    id: problem
+    attributes:
+      label: "Problem / motivation"
+      description: "What can't you do today, and what firmware or use case needs it? Concrete beats abstract."
+      placeholder: "My firmware joins the PIO TX FIFO (FJOIN_TX) for a 8-deep DMA-fed stream; the engine only offers a 4-deep FIFO, so the program underruns."
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: "Proposed behaviour"
+      description: "What should the engine do? Reference the relevant register/instruction/bitfield if you know it (e.g. SHIFTCTRL.FJOIN_TX, GPIOBASE, MEINEXT)."
+    validations:
+      required: true
+  - type: dropdown
+    id: roadmap-check
+    attributes:
+      label: "ROADMAP.md status"
+      description: "Where does this sit relative to the roadmap?"
+      options:
+        - "Already listed as deferred in ROADMAP.md (I'm adding demand/context)"
+        - "Not on the roadmap — genuinely new"
+        - "Not sure"
+    validations:
+      required: true
+  - type: textarea
+    id: test
+    attributes:
+      label: "How would we know it works?"
+      description: "This fork gates every behaviour with a falsifiable test. Sketch the assertion or the firmware run that would prove the feature correct (and ideally fail on today's engine)."
+      placeholder: "A PIO test that fills 8 TX words after FJOIN_TX and asserts no underrun over N cycles; fails today because the FIFO caps at 4."
+    validations:
+      required: false

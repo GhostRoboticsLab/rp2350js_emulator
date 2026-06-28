@@ -1,0 +1,5 @@
+# Default review ownership for GhostRoboticsLab/rp2350js_emulator.
+# @prat96 (Pratheek Balakrishna) is requested on every PR; under the
+# GhostRoboticsLab org this is the catch-all owner for anything without a
+# more specific rule below.
+* @prat96

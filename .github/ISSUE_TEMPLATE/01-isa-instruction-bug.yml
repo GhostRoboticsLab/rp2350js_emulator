@@ -1,0 +1,82 @@
+name: "RISC-V instruction / ISA incorrectness"
+description: "An instruction decodes, traps, or computes a result that disagrees with the RISC-V spec or Hazard3."
+title: "[isa] "
+labels: ["bug", "riscv-core"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for stress-testing the Hazard3 core.
+
+        **Before you file:**
+        - Search [existing issues](https://github.com/GhostRoboticsLab/rp2350js_emulator/issues?q=is%3Aissue) — this is an **early-but-real** fork and known gaps are tracked in [ROADMAP.md](https://github.com/GhostRoboticsLab/rp2350js_emulator/blob/main/ROADMAP.md).
+        - This template is for a *single wrong instruction*: a bad decode, a wrong result word, a mis-targeted trap, a missing CSR side effect. The core is `RV32IMAC + Zba/Zbb/Zbs/Zcb`; the M-extension family (incl. `MULHSU`), trap entry, and the Hazard3 IRQ controller were the largest fix areas — see [README.md](https://github.com/GhostRoboticsLab/rp2350js_emulator/blob/main/README.md#what-this-fork-fixes-in-the-risc-v-core).
+        - For a whole peripheral or a firmware that won't boot, use the *Peripheral / firmware boot issue* template instead.
+  - type: input
+    id: instructions
+    attributes:
+      label: "Affected instruction(s)"
+      description: "Mnemonic(s), exactly as the assembler spells them. If you have the 16/32-bit encoding, include it."
+      placeholder: "MULHSU, or c.zext.h, or csrrc — encoding 0x02C5_A5B3 if known"
+    validations:
+      required: true
+  - type: dropdown
+    id: isa-area
+    attributes:
+      label: "ISA area"
+      description: "Which extension or subsystem the instruction belongs to."
+      options:
+        - "RV32I (base integer)"
+        - "RV32M (mul/div)"
+        - "RV32A (atomics)"
+        - "RV32C (compressed)"
+        - "Zba/Zbb/Zbs (bit-manipulation)"
+        - "Zcb (extra compressed)"
+        - "Zicsr (CSR access)"
+        - "trap / CSR machine state (mtvec, mcause, mstatus, mepc, …)"
+        - "Xh3irq (Hazard3 interrupt controller: meinext, meiea, meipa, …)"
+        - "other / not sure"
+    validations:
+      required: true
+  - type: textarea
+    id: expected-vs-actual
+    attributes:
+      label: "Expected vs actual"
+      description: "What the spec says should happen, and what the engine does instead. Be exact: operand values, the result word, the resulting PC, or mcause/mepc for a trap."
+      placeholder: |
+        Inputs: rs1 = 0xFFFF_FFFF (-1, signed), rs2 = 0x0000_0002 (2, unsigned)
+        Expected (MULHSU = signed*unsigned, high word): 0xFFFF_FFFF
+        Actual: 0x0000_0001
+    validations:
+      required: true
+  - type: textarea
+    id: reproducer
+    attributes:
+      label: "Minimal reproducer"
+      description: "Smallest asm sequence (the in-tree assembler is fine) or a firmware ELF/UF2 plus the steps to reach the faulting instruction. Paste the snippet; attach the binary if needed."
+      placeholder: |
+        li   a0, -1
+        li   a1, 2
+        mulhsu a2, a0, a1   # a2 should be 0xFFFFFFFF
+        # then: dump x12 after one step
+      render: text
+    validations:
+      required: true
+  - type: checkboxes
+    id: negative-control
+    attributes:
+      label: "Regression test"
+      description: "Every core fix in this repo ships with a falsifiable test in src/riscv/test/cpu-fixes.spec.ts that is proven to FAIL on the pre-fix engine (a negative control). It speeds up triage enormously if you can supply one."
+      options:
+        - label: "I can/will add a negative-control test (an assertion proven to fail on the current engine)."
+          required: false
+        - label: "I confirmed this isn't already a deferred item in ROADMAP.md (e.g. the intentional illegal-instruction `throw`)."
+          required: false
+  - type: input
+    id: version
+    attributes:
+      label: "Engine version / commit"
+      description: "The release tag (e.g. rp2350-v0.1.0) or `git rev-parse --short HEAD`. Note: v0.1.0..v1.3.3 are inherited upstream rp2040js tags, not this fork's releases."
+      placeholder: "rp2350-v0.1.0 / fb7f130"
+    validations:
+      required: true

@@ -1,0 +1,77 @@
+name: "Peripheral / firmware boot issue"
+description: "A RP2350 peripheral behaves wrong, or a real firmware won't boot / hangs / produces the wrong output."
+title: "[peripheral] "
+labels: ["bug", "rp2350-peripheral"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for running real firmware through the chip.
+
+        **Before you file:**
+        - Search [existing issues](https://github.com/GhostRoboticsLab/rp2350js_emulator/issues?q=is%3Aissue) first. The peripheral layer is freshly multi-chip parameterized and some RP2350 PIO features are **deliberately deferred** until firmware exercises them — check the "remaining RP2350 PIO features" section of [ROADMAP.md](https://github.com/GhostRoboticsLab/rp2350js_emulator/blob/main/ROADMAP.md) before reporting a PIO gap (`IN_COUNT` masking, PIO IRQ-index mode, neighbour-SM restart, `FJOIN_RX/TX`, `WAIT PIN` gpiobase offset are known-deferred).
+        - Three firmware integration tests are known-good baselines: `blink_simple` (GPIO via SIO), `hello_timer` (250M-step timer-IRQ run, 19 prints), `pio_blink` (two PIO blocks, GPIO3 + GPIO32 via the GPIOBASE pin-window). If yours diverges from one of these, say which.
+        - If the root cause is a single wrong *instruction*, use the *RISC-V instruction / ISA incorrectness* template instead.
+  - type: dropdown
+    id: peripheral
+    attributes:
+      label: "Peripheral"
+      description: "The block most likely at fault. Pick `bootrom` if the chip never reaches your firmware's entry point."
+      options:
+        - "SIO (single-cycle IO, GPIO atomic set/clr/xor)"
+        - "TIMER"
+        - "PIO"
+        - "DMA"
+        - "GPIO / pads (function-select, pad mask, GPIOBASE pin-window)"
+        - "UART"
+        - "SPI"
+        - "I2C"
+        - "PWM"
+        - "ADC"
+        - "USB"
+        - "RESETS (reset_mask / RESET_DONE)"
+        - "POWMAN"
+        - "bootrom (A2)"
+        - "other / not sure"
+    validations:
+      required: true
+  - type: textarea
+    id: firmware
+    attributes:
+      label: "Firmware under test"
+      description: "What is it, and how was it built? SDK version, target board, RISC-V vs Arm toolchain. Link or attach the ELF/UF2 if you can."
+      placeholder: |
+        pico-sdk 2.1.0, board pico2 (rp2350, riscv), pio_ws2812 example driving GP28.
+        Built with the riscv toolchain; attaching ws2812.elf.
+    validations:
+      required: true
+  - type: textarea
+    id: expected-vs-actual
+    attributes:
+      label: "What happens vs what you expected"
+      description: "Observed behaviour against intended. Be concrete: which GPIO/register, expected vs actual value, where it hangs (PC, the spin loop), or how the output stream differs."
+      placeholder: |
+        Expected: GP28 emits a 24-bit WS2812 frame, GP3 toggles twice.
+        Actual: chip spins in the bootrom RESET_DONE loop and never reaches main().
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: "Steps to reproduce"
+      description: "Exactly how you ran it: the harness/script, step budget, and what you inspected. A minimal failing snippet beats a prose description."
+      placeholder: |
+        1. const mcu = new RP2350(); load ws2812.uf2; mcu.core0.pc = 0x...
+        2. step ~2,000,000 cycles
+        3. read gpioValues — GP28 never changes
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: "Engine version / commit"
+      description: "The release tag (e.g. rp2350-v0.1.0) or `git rev-parse --short HEAD`. (v0.1.0..v1.3.3 are inherited upstream rp2040js tags, not this fork's.)"
+      placeholder: "rp2350-v0.1.0 / fb7f130"
+    validations:
+      required: true

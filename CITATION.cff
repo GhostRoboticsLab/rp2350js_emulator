@@ -1,0 +1,38 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using these metadata."
+title: "rp2350js — RP2350 (Hazard3 RISC-V) emulator"
+abstract: "A TypeScript emulator of the RP2350 (Raspberry Pi Pico 2) Hazard3 RISC-V cores. A fork of wokwi/rp2040js that re-bases c1570's RP2350 work onto the latest upstream and corrects the RISC-V core (RV32IMAC + Zba/Zbb/Zbs/Zcb), test-gated against a falsifiable instruction-correctness suite and three firmware integration tests."
+type: software
+authors:
+  - family-names: Balakrishna
+    given-names: Pratheek
+repository-code: "https://github.com/GhostRoboticsLab/rp2350js_emulator"
+url: "https://github.com/GhostRoboticsLab/rp2350js_emulator"
+license: MIT
+version: rp2350-v0.1.0
+date-released: "2026-06-28"
+keywords:
+  - rp2350
+  - risc-v
+  - hazard3
+  - emulator
+  - raspberry-pi-pico-2
+  - digital-twin
+  - embedded
+  - typescript
+references:
+  - type: software
+    title: "rp2040js"
+    abstract: "The RP2040 emulator base this fork builds on."
+    authors:
+      - family-names: Shaked
+        given-names: Uri
+    url: "https://github.com/wokwi/rp2040js"
+    license: MIT
+  - type: software
+    title: "rp2040js (rp2350js/WIP branch) — RP2350 / Hazard3 RISC-V core"
+    abstract: "The original RP2350 / Hazard3 RISC-V emulation core, imported here with authorship preserved."
+    authors:
+      - name: "c1570"
+    url: "https://github.com/c1570/rp2040js"
+    license: MIT
