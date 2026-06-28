@@ -6,18 +6,34 @@
     "type": "git",
     "url": "git+https://github.com/GhostRoboticsLab/rp2350js_emulator.git"
   },
+  "homepage": "https://ghostlabs.web.app",
+  "bugs": {
+    "url": "https://github.com/GhostRoboticsLab/rp2350js_emulator/issues"
+  },
   "keywords": [
     "rp2350",
     "rp2040",
     "raspberry pi pico 2",
+    "pico2",
     "hazard3",
     "risc-v",
-    "emulator"
+    "rv32imac",
+    "emulator",
+    "simulator",
+    "microcontroller",
+    "embedded",
+    "digital-twin",
+    "pio",
+    "typescript"
   ],
   "files": [
     "dist"
   ],
   "author": "Uri Shaked <uri@wokwi.com>",
+  "contributors": [
+    "c1570 (RP2350 / Hazard3 RISC-V emulation core)",
+    "Pratheek Balakrishna <pratheekb96@gmail.com> (RP2350 RISC-V fixes, upstream port)"
+  ],
   "license": "MIT",
   "type": "module",
   "main": "./dist/cjs/index.js",

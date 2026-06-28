@@ -1,4 +1,9 @@
-![CI](../../actions/workflows/ci.yml/badge.svg)
+[![CI](../../actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-348%20passing-brightgreen.svg)](#quick-start)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![Node](https://img.shields.io/badge/node-%E2%89%A518-339933.svg?logo=node.js&logoColor=white)](./package.json)
+[![TypeScript](https://img.shields.io/badge/TypeScript-ESM-3178c6.svg?logo=typescript&logoColor=white)](#layout)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
 # rp2350js — RP2350 (Hazard3 RISC-V) emulator
 
