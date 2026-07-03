@@ -142,6 +142,15 @@ export class StateMachine {
 
   clockDivInt: number = 1;
   clockDivFrac: number = 0;
+  // Fractional clock divider + delay-slot pacing. `clkAccum` accumulates system cycles in
+  // .8 fixed point (one system cycle = 0x100); the SM advances one instruction only once the
+  // accumulator reaches the divisor (INT + FRAC/256). `delayCounter` holds the [delay]/side-set
+  // idle SM-clocks still owed after the last instruction; `pendingDelay` is that instruction's
+  // delay, captured during executeInstruction. At the reset default (INT=1, FRAC=0, no delays)
+  // the SM ticks every system cycle with zero idle — identical to the pre-divider behaviour.
+  private clkAccum = 0;
+  private delayCounter = 0;
+  private pendingDelay = 0;
   execCtrl = 0x1f << 12;
   shiftCtrl = 0b11 << 18;
   pinCtrl = 0x5 << 26;
@@ -681,6 +690,7 @@ export class StateMachine {
       this.checkWait();
     } else {
       this.cycles += delay;
+      this.pendingDelay = delay; // idle this many SM-clocks before the next instruction
     }
   }
 
@@ -702,6 +712,24 @@ export class StateMachine {
   }
 
   step() {
+    // Fractional clock divider (RP2350/RP2040 SMx_CLKDIV): the SM advances one instruction
+    // once every (INT + FRAC/256) system cycles. Divisor is .8 fixed point; INT==0 means 65536
+    // (full 16-bit wrap) per the datasheet. At the reset default INT=1/FRAC=0 the divisor is
+    // 0x100, so the SM ticks every system cycle — unchanged from the pre-divider model.
+    const divisor = ((this.clockDivInt || 0x10000) << 8) | this.clockDivFrac;
+    this.clkAccum += 0x100;
+    if (this.clkAccum < divisor) {
+      return;
+    }
+    this.clkAccum -= divisor;
+
+    // One SM clock elapsed. Burn any [delay]/side-set slots owed by the previous instruction
+    // before fetching the next one — this is what shapes PIO waveforms (e.g. WS2812 bit timing).
+    if (this.delayCounter > 0) {
+      this.delayCounter--;
+      return;
+    }
+
     if (this.waiting) {
       this.checkWait();
       if (this.waiting) {
@@ -709,11 +737,13 @@ export class StateMachine {
       }
     }
 
+    this.pendingDelay = 0;
     this.updatePC = true;
     this.executeInstruction(this.pio.instructions[this.pc]);
     if (this.updatePC) {
       this.nextPC();
     }
+    this.delayCounter = this.pendingDelay;
   }
 
   setSetPinDirs(value: number) {
@@ -856,11 +886,15 @@ export class StateMachine {
     this.outputShiftCount = 32;
     this.inputShiftReg = 0;
     this.waiting = false;
+    this.delayCounter = 0; // drop any owed delay slots on SM restart
+    this.pendingDelay = 0;
     // TODO any pin write left asserted due to OUT_STICKY.
   }
 
   clkDivRestart() {
-    this.pio.warn('clkDivRestart not implemented');
+    // Realign the fractional divider phase (CTRL.CLKDIV_RESTART): restart the accumulator so the
+    // next SM clock is a full divisor away. Does not touch SM state (that is RESTART).
+    this.clkAccum = 0;
   }
 
   checkWait() {

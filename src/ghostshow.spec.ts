@@ -78,11 +78,11 @@ describe('ghostshow — GhostLabs PGA2350 carrier (full + mini) digital twin', (
     }
   });
 
-  // Tier 3.1 negative control (skipped until the fix lands): the SM ignores CLKDIV/delay slots,
-  // so GP28 '1'-bit high-pulses are ~8-32 ns instead of ~800 ns (measured) — every bit reads '0'
-  // and the ghost decodes all-black. Honouring the fractional divider restores WS2812 timing and
-  // lights the ghost. Flip .skip → it when the PIO-divider fix lands (red before, green after).
-  it.skip('renders a non-black ghost (PIO CLKDIV / delay slots honoured)', () => {
+  // Tier 3.1 negative control: before the PIO fractional-divider + delay-slot fix, the SM ran at
+  // full clk_sys, so GP28 '1'-bit high-pulses were ~8-32 ns instead of the ~1050 ns / ~300 ns
+  // ('1'/'0') the divider now produces (measured) — every bit read '0' and the ghost decoded
+  // all-black. Honouring CLKDIV restores real WS2812 timing and lights the ghost: red before, green after.
+  it('renders a non-black ghost (PIO CLKDIV / delay slots honoured)', () => {
     const f = decoder.latestFrame as RGB[];
     expect(f.filter((p) => p.r || p.g || p.b).length).toBeGreaterThan(0);
     const total = f.reduce((s, p) => s + p.r + p.g + p.b, 0);
