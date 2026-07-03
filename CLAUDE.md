@@ -15,7 +15,7 @@ RISC-V core corrected). See `ROADMAP.md` for the defect log and deferred work.
 
 ```bash
 npm install                              # Node >= 18
-npm test                                 # vitest run — 348 pass, 0 skipped. hello_timer ~22s (250M-step firmware run)
+npm test                                 # vitest run — 377 pass, 0 skipped. hello_timer ~22s (250M-step firmware run)
 npm run test:watch                       # vitest watch mode
 npx vitest run src/riscv                 # RISC-V correctness suite only
 npx vitest run src/rp2350.spec.ts        # RP2350 firmware integration tests only
@@ -25,6 +25,7 @@ npm run lint                             # eslint . --ext .ts
 npm run format:check                     # prettier check
 npm run build                            # dual ESM (tsconfig.json) + CJS (tsconfig.cjs.json) build into dist/
 npm start                                # RP2040 demo runner (tsx demo/emulator-run.ts) — NOT RP2350; see below
+npm run start:rp2350 -- --image f.uf2    # RP2350 (RISC-V) CLI runner: boots a .uf2/.hex, streams UART, --pin N counts GPIO edges
 ```
 
 There is no vitest config file — vitest auto-discovers `*.spec.ts`. prettier + eslint auto-run on
@@ -62,8 +63,9 @@ parameterization is also a candidate upstream PR to Wokwi (see end of `ROADMAP.m
   and the GDB server use.
 - **RP2350** has its own model on the chip itself: `rp2350.step()` → `stepCores()` (runs core0 one
   instruction, then lockstep-runs core1 until `core1.cycles` catches up to `core0.cycles`) →
-  `stepThings(cycles)` (steps all three PIO blocks per cycle and ticks the clock). There is **no CLI
-  runner and no `Simulator` for RP2350** — you drive it by calling `step()` in a loop yourself.
+  `stepThings(cycles)` (steps all three PIO blocks per cycle and ticks the clock). RP2350 has a CLI
+  runner (`npm run start:rp2350`, `demo/emulator-run-rp2350.ts`) but no `Simulator`/GDB integration;
+  internally you drive it by calling `step()` in a loop yourself (see `src/ghostshow.spec.ts`).
 
 ### How RP2350 firmware is actually run (the pattern to copy)
 

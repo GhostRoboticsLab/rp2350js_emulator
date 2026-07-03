@@ -131,4 +131,46 @@ cd …/pga2350-carrier/firmware/ghostshow/sim && npm run dev   # http://localhos
 
 ## Status log
 
-- _(updated as tiers land)_
+**Verification harness — DONE.** `src/ghostshow.spec.ts` boots the real GhostLabs ghostshow RISC-V
+image (both carriers), decodes the GP28 WS2812 line into 24-px frames, asserts boot/console/power/
+input. The carrier web twin (`…/ghostshow/sim`) is repointed from the vendored c1570 engine to **this
+fork** via a symlink (+ `vite.config` fs.allow) and runs live with HMR — editing the fork hot-reloads
+the ghost. Confirmed rendering in colour in the browser. Suite: **377 pass** (was 348).
+
+### Landed (each its own signed commit, negative-control tested, suite green)
+
+- **Tier 3.1** ✅ PIO fractional CLKDIV + delay slots — the keystone. GP28 '1'/'0' pulses went from
+  ~8-32 ns to ~1050/300 ns; the ghost decodes from all-black to colour. No-op at divider=1.0 (pio_blink exact).
+- **Tier 0.1** ✅ FIFO_ST write-1-to-clear (`|`→`&`) — real correctness bug.
+- **Tier 0.2** ✅ WFI decode (idle loops park instead of aborting).
+- **Tier 0.3** ✅ mcycle/minstret/cycle/instret CSRs (were 0).
+- **Tier 0.4** ✅ Watchdog enabled (1 MHz tick, working SCRATCH).
+- **Tier 0.5** ✅ PWM 12 slices + fixed the latent `PWMChannel.get en` bug (EN read always returned 0).
+- **Tier 0.6** ✅ ROL/ROR/BINV/ORC.B (Zbb/Zbs register forms that threw).
+- **Tier 1.1** ✅ Full RV32A atomics (all AMOs + LR/SC with a per-core reservation).
+- **Tier 2.1/2.2** ✅ `npm run start:rp2350` CLI + family-id-aware UF2 loader (routes flash/SRAM, flags
+  Arm images — the Tier 5.3 loud-Arm-rejection). Verified booting ghostshow .hex and .uf2.
+- **Tier 4.3** ✅ Inter-core DOORBELL + SIO_IRQ_BELL (multicore_doorbell_*).
+- Added the first `*_rp2350` peripheral specs (watchdog, pwm) — starts closing Tier 4.22's gap.
+
+### Deferred (with rationale — captured as todos, not silently dropped)
+
+- **Tier 3.2 (clk_sys 150 MHz from PLL)** ⏸ — a naive default change from 125→150 shifts `hello_timer`'s
+  250M-step timing (2 s → 1.67 s) and would break that green firmware gate. The right fix is
+  PLL-*driven* per-firmware clocking + recalibrating the timer-print expectation; staged to avoid
+  destabilising the suite. The ghost already decodes correctly at 125 MHz.
+- **Tier 1.2 (assembler-based table-driven ISA harness)** ⏸ — the hand-encoded `cpu-fixes.spec.ts`
+  negative controls already satisfy the signature rule for every op added; extending the in-repo
+  assembler to all of A/Zb*/C is a large separate task.
+- **Tier 2.3/2.4 (Hazard3 GDB target + RISC-V disassembler)** ⏸ — large; the CLI runner covers the
+  common "run a .uf2" need.
+- **Tier 4.1/4.2/4.4/4.5 (OTP, POWMAN AON timer, TICKS, SHA-256/TRNG)** ⏸ — register-model stubs to
+  stop unmapped-throw / 0xffffffff-lie; not exercised by the ghostshow twin, so staged behind the
+  higher-value ISA/timing work.
+- **Tier 5.1/5.2/5.3-rest (privilege M/U, PSM core1 reset-hold + real FIFO launch, PMP CSR storage)** ⏸.
+  5.2 would unblock dual-core ghostshow in the sim (a great demo) but is a larger, riskier change.
+- **Tier 5.4 (Arm Cortex-M33 core)** ⏸ — out of scope (multi-month; M0+ not reusable). Documented as
+  a hard boundary; the UF2 loader now rejects Arm images loudly.
+
+**Note:** the carrier repo's sim wiring (vendor symlink → this fork, `vite.config` fs.allow) is local
+dev scaffolding and intentionally NOT committed to that repo (machine-specific absolute path).

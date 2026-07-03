@@ -99,6 +99,38 @@ deferred to land with its own falsifiable test rather than ported unverified:
 Each peripheral's parameterization is also a natural **upstream PR to wokwi/rp2040js** ("make the
 peripheral layer multi-chip"), see below.
 
+## Done — realism & completeness pass (gated by the ghostshow carrier twin)
+
+An adversarial multi-dimension audit drove a realism pass, verified against the real GhostLabs
+`ghostshow` firmware (both PGA2350 carriers) running on this engine — headless (`ghostshow.spec.ts`)
+and in the browser digital twin. See `plan.md` for the full tiered record. Highlights:
+
+| Area | Change | Status |
+|---|---|---|
+| PIO | **fractional CLKDIV + per-instruction delay slots honoured** (were stored, never consumed) — WS2812 bit timing is now real; the ghost decodes to colour instead of all-black | ✅ |
+| RV32A | full atomics — all AMOs + LR/SC with a per-core reservation (only amoswap/or/and existed; the rest aborted) | ✅ |
+| RV32I/Zicsr | `wfi` decoded (idle loops parked, not aborted); mcycle/minstret/cycle/instret wired (read 0 before) | ✅ |
+| Zbb/Zbs | register-form `rol`/`ror`/`binv` + `orc.b` (threw) | ✅ |
+| SIO | FIFO_ST write-1-to-clear (`|`→`&`); RP2350 inter-core **DOORBELL** + SIO_IRQ_BELL | ✅ |
+| Peripherals | watchdog enabled (1 MHz tick, working SCRATCH); PWM 12 slices + fixed EN read-back | ✅ |
+| Tooling | `npm run start:rp2350` CLI + family-id-aware UF2 loader (routes flash/SRAM; **rejects Arm images loudly**) | ✅ |
+
+### Known boundaries (deliberately not modelled — do not mistake green for silicon)
+
+- **No Arm Cortex-M33 path.** This fork emulates only the two Hazard3 RISC-V cores; the SDK's default
+  target is `rp2350-arm-s`, which cannot run here (the RP2040 M0+ core is not reusable). The UF2 loader
+  flags such images.
+- **`clk_sys` is a fixed 125 MHz**, not PLL-driven; the RP2350 SDK default is 150 MHz. Absolute
+  peripheral rates are off until per-firmware PLL-driven clocking lands (deferred to avoid shifting the
+  `hello_timer` gate).
+- **Boot flow is bypassed** (PC jumped to the image entry; core1 not held in reset via PSM, so the
+  `multicore_launch_core1` FIFO handshake isn't exercised); OTP/secure-boot/TICKS gating absent.
+- **Leader/follower dual-core stepping** is core0-favoured quantised lockstep — a green multicore test
+  does **not** prove race-freedom.
+
+Deferred items (OTP/POWMAN/TICKS/SHA models, privilege M/U, PSM core1 launch, PMP CSRs, GDB target +
+disassembler, PLL-driven clocking, assembler-based ISA harness) are tracked in `plan.md`.
+
 ## Later — upstreaming to Wokwi
 
 Offer the work back to [wokwi/rp2040js](https://github.com/wokwi/rp2040js) as small, reviewable PRs
