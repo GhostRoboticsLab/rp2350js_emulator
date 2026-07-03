@@ -143,3 +143,20 @@ describe('Standard RISC-V WFI parks the core instead of aborting', () => {
     expect(cpu.csrs[0x342] >>> 0).toBe(((1 << 31) | 11) >>> 0); // external-interrupt cause
   });
 });
+
+describe('Performance counters read the live counts (were undecoded, read 0)', () => {
+  test('mcycle/cycle expose cpu.cycles as a 64-bit low/high pair', () => {
+    const cpu = freshCore();
+    cpu.cycles = 0x100000005; // > 2^32 to exercise the high word
+    expect(cpu.getCSR(0xb00, 0) >>> 0).toBe(0x00000005); // mcycle low
+    expect(cpu.getCSR(0xb80, 0) >>> 0).toBe(0x00000001); // mcycleh
+    expect(cpu.getCSR(0xc00, 0) >>> 0).toBe(0x00000005); // cycle (unprivileged mirror)
+  });
+
+  test('minstret/instret expose the retired-instruction count', () => {
+    const cpu = freshCore();
+    cpu.retired = 42;
+    expect(cpu.getCSR(0xb02, 0) >>> 0).toBe(42); // minstret
+    expect(cpu.getCSR(0xc02, 0) >>> 0).toBe(42); // instret
+  });
+});

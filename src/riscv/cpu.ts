@@ -24,6 +24,7 @@ export class CPU {
   next_pc = 0;
   stopped = false; //TODO
   cycles = 0;
+  retired = 0; // retired-instruction count, exposed via minstret/instret CSRs
   currentMode: ExecutionMode = ExecutionMode.Mode_Machine;
 
   interruptsUpdated = false;
@@ -143,6 +144,7 @@ export class CPU {
       throw e;
     }
     this.cycles++;
+    this.retired++;
   }
 
   step(instruction: number) {
@@ -601,6 +603,21 @@ export class CPU {
           if(raw_write & 0b0100) this.csrs[0x304] |= 1<<3; // write to MSIESAVE: set MIE.MSIE
         }
         return meicontext;
+      // Performance counters (Hazard3 implements these; they previously read 0, hanging any
+      // rdcycle/rdinstret busy-wait). mcycle/cycle track elapsed cycles (incl. multi-cycle ops);
+      // minstret/instret track retired instructions. 64-bit, split into low/high 32-bit words.
+      case 0xb00: // mcycle
+      case 0xc00: // cycle (unprivileged read-only mirror)
+        return (this.cycles % 0x100000000) >>> 0;
+      case 0xb80: // mcycleh
+      case 0xc80: // cycleh
+        return Math.floor(this.cycles / 0x100000000) >>> 0;
+      case 0xb02: // minstret
+      case 0xc02: // instret
+        return (this.retired % 0x100000000) >>> 0;
+      case 0xb82: // minstreth
+      case 0xc82: // instreth
+        return Math.floor(this.retired / 0x100000000) >>> 0;
     }
     this.logger.info(this.coreLabel, `Unknown CSR get: 0x${csr.toString(16)}`);
     return this.csrs[csr];
