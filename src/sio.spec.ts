@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestDriver } from '../test-utils/create-test-driver.js';
 import { ICortexTestDriver } from '../test-utils/test-driver.js';
 import { SIO_START_ADDRESS } from './rp2040.js';
+import { RP2350 } from './rp2350.js';
 
 //Hardware Divider registers absolute address
 const SIO_DIV_UDIVIDEND = SIO_START_ADDRESS + 0x060; //  Divider unsigned dividend
@@ -15,6 +16,41 @@ const SIO_DIV_CSR = SIO_START_ADDRESS + 0x078;
 //SPINLOCK
 const SIO_SPINLOCK10 = SIO_START_ADDRESS + 0x128;
 const SIO_SPINLOCKST = SIO_START_ADDRESS + 0x5c;
+
+// SIO inter-core FIFO_ST is write-1-to-clear per bit (WOF = bit 2, ROE = bit 3). The handler used
+// `if (value | FIFO_ST_*_BITS)` — bitwise-OR with a nonzero constant is always truthy, so ANY write
+// to FIFO_ST cleared BOTH sticky error latches (and could spuriously de-assert the SIO FIFO IRQ).
+// Negative control: latch both, write only the WOF bit, and require ROE to survive.
+describe('SIO FIFO_ST write-1-to-clear (WOF/ROE)', () => {
+  const FIFO_ST = 0x50;
+  const WOF_BIT = 0x04;
+  const ROE_BIT = 0x08;
+
+  it('clears only the bit written, leaving the other sticky latch set', () => {
+    const core = new RP2350().sio.core0;
+    core.WOF = true;
+    core.ROE = true;
+    core.writeUint32(FIFO_ST, WOF_BIT); // write-1-to-clear the WOF latch only
+    expect(core.WOF).toBe(false); // WOF cleared as requested
+    expect(core.ROE).toBe(true); // ROE must persist — the `|` bug cleared it too
+  });
+
+  it('clears ROE when its bit is written, and both when both are written', () => {
+    const c1 = new RP2350().sio.core0;
+    c1.WOF = true;
+    c1.ROE = true;
+    c1.writeUint32(FIFO_ST, ROE_BIT);
+    expect(c1.ROE).toBe(false);
+    expect(c1.WOF).toBe(true);
+
+    const c2 = new RP2350().sio.core0;
+    c2.WOF = true;
+    c2.ROE = true;
+    c2.writeUint32(FIFO_ST, WOF_BIT | ROE_BIT);
+    expect(c2.WOF).toBe(false);
+    expect(c2.ROE).toBe(false);
+  });
+});
 
 describe('RPSIO', () => {
   let cpu: ICortexTestDriver;

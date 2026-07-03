@@ -317,10 +317,12 @@ export class RPSIOCore {
         this.interp1.setBase01(value);
         break;
       case FIFO_ST:
-        if (value | FIFO_ST_WOF_BITS) {
+        // Write-1-to-clear per bit: only clear a sticky latch when its own bit is written.
+        // (Was `value | …`, always truthy, so any FIFO_ST write wiped both WOF and ROE.)
+        if (value & FIFO_ST_WOF_BITS) {
           this.WOF = false;
         }
-        if (value | FIFO_ST_ROE_BITS) {
+        if (value & FIFO_ST_ROE_BITS) {
           this.ROE = false;
         }
         if (!this.WOF && !this.ROE && this.rxFIFO.empty) {
