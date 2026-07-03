@@ -11,6 +11,7 @@ import { RPBootRAM } from './peripherals/bootram.js';
 import { RPPOWMAN } from './peripherals/powman.js';
 import { RPClocks } from './peripherals/clocks.js';
 import { DREQChannel, RPDMA } from './peripherals/dma_rp2350.js';
+import { RPGlitchDetector } from './peripherals/glitch_detector.js';
 import { RPI2C } from './peripherals/i2c.js';
 import { RPIO } from './peripherals/io_rp2350.js';
 import { RPOTP, RPOTPData } from './peripherals/otp.js';
@@ -27,6 +28,7 @@ import { RP2350SysCfg } from './peripherals/syscfg_rp2350.js';
 import { RP2350SysInfo } from './peripherals/sysinfo_rp2350.js';
 import { RPTBMAN } from './peripherals/tbman.js';
 import { RPTicks } from './peripherals/ticks.js';
+import { RPTRNG } from './peripherals/trng.js';
 import { RPTimer } from './peripherals/timer.js';
 import { RPUART } from './peripherals/uart.js';
 import { RPUSBController } from './peripherals/usb.js';
@@ -155,11 +157,13 @@ export class RP2350 implements IRPChip {
     //0x400xx: new RP2040RTC(this, 'RTC_BASE'),
     0x400e0: new RPBootRAM(this, 'BOOTRAM_BASE'),
     0x400e8: new UnimplementedPeripheral(this, 'ROSC_BASE'),
+    0x400f0: new RPTRNG(this, 'TRNG_BASE'),
     0x400f8: new RPSHA256(this, 'SHA256_BASE'),
     0x40100: new RPPOWMAN(this, 'POWMAN_BASE'),
     0x40108: new RPTicks(this, 'TICKS_BASE'),
     0x40120: this.otp,
     0x40130: new RPOTPData(this, 'OTP_DATA_BASE', this.otp),
+    0x40158: new RPGlitchDetector(this, 'GLITCH_DETECTOR_BASE'),
     0x40160: new RPTBMAN(this, 'TBMAN_BASE'),
 
     0x50000: this.dma,
