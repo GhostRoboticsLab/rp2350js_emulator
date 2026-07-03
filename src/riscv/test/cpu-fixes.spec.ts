@@ -118,3 +118,28 @@ describe('Hazard3 Xh3irq external interrupt index 0 (TIMER0_IRQ_0) is deliverabl
     expect(cpu.branch_taken).toBe(true);
   });
 });
+
+describe('Standard RISC-V WFI parks the core instead of aborting', () => {
+  test('wfi decodes and parks the core (was: threw "Unknown instruction 0x10500073")', () => {
+    const cpu = freshCore();
+    // The SYSTEM func3=0 table only knew mret/ecall/ebreak, so the standard wfi encoding hit the
+    // default `throw`, killing the core on the first __wfi() of any idle loop.
+    expect(() => cpu.step(0x10500073)).not.toThrow(); // wfi
+    expect(cpu.waiting).toBe(true);
+  });
+
+  test('a parked core wakes and traps when an enabled interrupt becomes pending', () => {
+    const cpu = freshCore();
+    cpu.csrs[0x305] = 0x20001000; // mtvec
+    cpu.csrs[0x304] |= 1 << 11; // mie.MEIE
+    cpu.csrs[0x300] |= 1 << 3; // mstatus.MIE
+    cpu.meipra[0] = 1; // priority of IRQ 0
+    cpu.meiea[0] = 1; // IRQ 0 enabled
+    cpu.step(0x10500073); // wfi -> park
+    expect(cpu.waiting).toBe(true);
+    cpu.setInterrupt(0, true); // assert IRQ 0
+    cpu.checkForInterrupts(); // pending + enabled -> wake and trap
+    expect(cpu.waiting).toBe(false);
+    expect(cpu.csrs[0x342] >>> 0).toBe(((1 << 31) | 11) >>> 0); // external-interrupt cause
+  });
+});

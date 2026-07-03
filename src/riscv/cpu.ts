@@ -1311,6 +1311,13 @@ const opcode0x73func3Table: FuncTable<I_Type> = new Map([
       case 0x100073: // ebreak
         cpu.trapEntry(3);
         break;
+      case 0x10500073: // wfi — wait for interrupt
+        // Park the core like Hazard3's h3.block sleep: executeInstruction still ticks the clock
+        // and calls checkForInterrupts, which clears `waiting` and traps when an enabled interrupt
+        // becomes pending (wfi ignores MSTATUS.MIE for the wake). Unlike h3.block/WFE, wfi does not
+        // consume the event latch. Previously undecoded, so the first __wfi() aborted the core.
+        cpu.waiting = true;
+        break;
       default:
         throw Error(`Unknown instruction 0x${instruction.binary.toString(16)}`);
     }
