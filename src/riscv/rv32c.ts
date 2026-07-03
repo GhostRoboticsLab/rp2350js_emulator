@@ -3,7 +3,7 @@ import { CPU } from "./cpu.js";
 export function decompress_rv32c_inst(cpu: CPU, inst: number): number {
   let index = ((inst & 0x0003) << 3) | ((inst & 0xE000) >> 13);
   let decompressor: any = decompressors[index];
-  if(!decompressor) throw new Error(`cannot handle index 0b${index.toString(2)}`);
+  if(!decompressor) throw new Error(`cannot handle index 0b${index.toString(2)} (inst=0x${(inst & 0xffff).toString(16)} pc=0x${cpu.pc.toString(16)})`);
   return decompressor(cpu, inst);
 }
 
