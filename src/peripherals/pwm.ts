@@ -27,17 +27,9 @@ const CHn_TOP = 0x10;
  * For each channel, there is only one physical EN register bit,
  * which can be accessed through here or CHx_CSR.
  */
-const EN = 0xa0;
-/** Raw Interrupts */
-const INTR = 0xa4;
-/** Interrupt Enable */
-const INTE = 0xa8;
-/** Interrupt Force */
-const INTF = 0xac;
-/** Interrupt status after masking & forcing */
-const INTS = 0xb0;
-
-const INT_MASK = 0xff;
+// EN and the INTR/INTE/INTF/INTS interrupt registers sit immediately after the channel array, so
+// their offsets scale with the slice count (8 on RP2040 -> EN 0xa0; 12 on RP2350 -> EN 0xf0), and
+// the interrupt bit mask is (1 << numChannels) - 1. All computed per instance in the constructor.
 
 /* CHn_CSR bits */
 const CSR_PH_ADV = 1 << 7;
@@ -253,6 +245,13 @@ class PWMChannel {
       (divMode === PWMDivMode.FreeRunning || (divMode === PWMDivMode.BGated && this.gpioBValue));
   }
 
+  get en(): number {
+    // The EN register aliases every channel's CSR_EN bit. Without this getter `channel.en` read as
+    // undefined, so the aggregated EN read always returned 0 (undefined << i === 0) — enabled slices
+    // never showed up in a read-back of EN.
+    return this.csr & CSR_EN ? 1 : 0;
+  }
+
   set en(value: number) {
     if (value && !(this.csr & CSR_EN)) {
       this.updateDoubleBuffered();
@@ -267,16 +266,13 @@ class PWMChannel {
 }
 
 export class RPPWM extends BasePeripheral implements Peripheral {
-  readonly channels = [
-    new PWMChannel(this, this.rp2040.clock, 0),
-    new PWMChannel(this, this.rp2040.clock, 1),
-    new PWMChannel(this, this.rp2040.clock, 2),
-    new PWMChannel(this, this.rp2040.clock, 3),
-    new PWMChannel(this, this.rp2040.clock, 4),
-    new PWMChannel(this, this.rp2040.clock, 5),
-    new PWMChannel(this, this.rp2040.clock, 6),
-    new PWMChannel(this, this.rp2040.clock, 7),
-  ];
+  readonly channels: PWMChannel[];
+  private readonly en: number; // EN register offset (immediately past the channel array)
+  private readonly intr: number;
+  private readonly inte: number;
+  private readonly intf: number;
+  private readonly ints: number;
+  private readonly intMask: number; // (1 << numChannels) - 1
   private intRaw = 0;
   private intEnable = 0;
   private intForce = 0;
@@ -291,8 +287,19 @@ export class RPPWM extends BasePeripheral implements Peripheral {
     name: string,
     readonly pwm_wrap_irq: number = IRQ.PWM_WRAP,
     readonly pwm_dreq_base: number = DREQChannel.DREQ_PWM_WRAP0,
+    numChannels: number = 8, // RP2040 has 8 PWM slices; RP2350 has 12
   ) {
     super(rp2040, name);
+    this.channels = Array.from(
+      { length: numChannels },
+      (_, i) => new PWMChannel(this, this.rp2040.clock, i),
+    );
+    this.en = numChannels * 0x14; // EN immediately follows the channel blocks
+    this.intr = this.en + 0x04;
+    this.inte = this.en + 0x08;
+    this.intf = this.en + 0x0c;
+    this.ints = this.en + 0x10;
+    this.intMask = (1 << numChannels) - 1;
   }
 
   get intStatus() {
@@ -300,66 +307,51 @@ export class RPPWM extends BasePeripheral implements Peripheral {
   }
 
   readUint32(offset: number) {
-    if (offset < EN) {
+    if (offset < this.en) {
       const channel = Math.floor(offset / 0x14);
       return this.channels[channel].readRegister(offset % 0x14);
     }
-    switch (offset) {
-      case EN:
-        return (
-          (this.channels[7].en << 7) |
-          (this.channels[6].en << 6) |
-          (this.channels[5].en << 5) |
-          (this.channels[4].en << 4) |
-          (this.channels[3].en << 3) |
-          (this.channels[2].en << 2) |
-          (this.channels[1].en << 1) |
-          (this.channels[0].en << 0)
-        );
-      case INTR:
-        return this.intRaw;
-      case INTE:
-        return this.intEnable;
-      case INTF:
-        return this.intForce;
-      case INTS:
-        return this.intStatus;
+    if (offset === this.en) {
+      let value = 0;
+      for (let i = 0; i < this.channels.length; i++) {
+        if (this.channels[i].en) value |= 1 << i;
+      }
+      return value;
     }
+    if (offset === this.intr) return this.intRaw;
+    if (offset === this.inte) return this.intEnable;
+    if (offset === this.intf) return this.intForce;
+    if (offset === this.ints) return this.intStatus;
     return super.readUint32(offset);
   }
 
   writeUint32(offset: number, value: number) {
-    if (offset < EN) {
+    if (offset < this.en) {
       const channel = Math.floor(offset / 0x14);
       return this.channels[channel].writeRegister(offset % 0x14, value);
     }
-
-    switch (offset) {
-      case EN:
-        this.channels[7].en = value & (1 << 7);
-        this.channels[6].en = value & (1 << 6);
-        this.channels[5].en = value & (1 << 5);
-        this.channels[4].en = value & (1 << 4);
-        this.channels[3].en = value & (1 << 3);
-        this.channels[2].en = value & (1 << 2);
-        this.channels[1].en = value & (1 << 1);
-        this.channels[0].en = value & (1 << 0);
-        break;
-      case INTR:
-        this.intRaw &= ~(value & INT_MASK);
-        this.checkInterrupts();
-        break;
-      case INTE:
-        this.intEnable = value & INT_MASK;
-        this.checkInterrupts();
-        break;
-      case INTF:
-        this.intForce = value & INT_MASK;
-        this.checkInterrupts();
-        break;
-      default:
-        super.writeUint32(offset, value);
+    if (offset === this.en) {
+      for (let i = 0; i < this.channels.length; i++) {
+        this.channels[i].en = value & (1 << i);
+      }
+      return;
     }
+    if (offset === this.intr) {
+      this.intRaw &= ~(value & this.intMask);
+      this.checkInterrupts();
+      return;
+    }
+    if (offset === this.inte) {
+      this.intEnable = value & this.intMask;
+      this.checkInterrupts();
+      return;
+    }
+    if (offset === this.intf) {
+      this.intForce = value & this.intMask;
+      this.checkInterrupts();
+      return;
+    }
+    super.writeUint32(offset, value);
   }
 
   get clockFreq() {

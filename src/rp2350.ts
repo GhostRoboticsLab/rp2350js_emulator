@@ -77,7 +77,7 @@ export class RP2350 implements IRPChip {
     }),
   ];
   readonly i2c = [new RPI2C(this, 'I2C0', IRQ.I2C0_IRQ), new RPI2C(this, 'I2C1', IRQ.I2C1_IRQ)];
-  readonly pwm = new RPPWM(this, 'PWM_BASE', IRQ.PWM_IRQ_WRAP_0, DREQChannel.DREQ_PWM_WRAP0);
+  readonly pwm = new RPPWM(this, 'PWM_BASE', IRQ.PWM_IRQ_WRAP_0, DREQChannel.DREQ_PWM_WRAP0, 12);
   readonly adc = new RPADC(this, 'ADC', IRQ.ADC_IRQ_FIFO, DREQChannel.DREQ_ADC);
 
   readonly gpio: Array<GPIOPin> = Array(48).fill(0).map((v,i) => new GPIOPin(this, i));
