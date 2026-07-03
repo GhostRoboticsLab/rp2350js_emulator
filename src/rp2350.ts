@@ -12,6 +12,7 @@ import { RPClocks } from './peripherals/clocks.js';
 import { DREQChannel, RPDMA } from './peripherals/dma_rp2350.js';
 import { RPI2C } from './peripherals/i2c.js';
 import { RPIO } from './peripherals/io_rp2350.js';
+import { RPOTP, RPOTPData } from './peripherals/otp.js';
 import { RPPADS } from './peripherals/pads_rp2350.js';
 import { Peripheral, UnimplementedPeripheral } from './peripherals/peripheral.js';
 import { RPPIO, WaitType } from './peripherals/pio.js';
@@ -114,6 +115,10 @@ export class RP2350 implements IRPChip {
   // registers (reboot-to-BOOTSEL / boot rendezvous) and REASON are addressable and testable.
   readonly watchdog = new RPWatchdog(this, 'WATCHDOG_BASE', 1_000_000);
 
+  // OTP fuse array + its two APB windows (interface at OTP_BASE, guarded ECC read at OTP_DATA_BASE).
+  // Named so a harness can seed `otp.fuse` to model a programmed part.
+  readonly otp = new RPOTP(this, 'OTP_BASE');
+
   public logger: Logger = new ConsoleLogger(LogLevel.Debug, true);
 
   readonly peripherals: { [index: number]: Peripheral } = {
@@ -150,6 +155,8 @@ export class RP2350 implements IRPChip {
     0x400e8: new UnimplementedPeripheral(this, 'ROSC_BASE'),
     0x40100: new RPPOWMAN(this, 'POWMAN_BASE'),
     0x40108: new RPTicks(this, 'TICKS_BASE'),
+    0x40120: this.otp,
+    0x40130: new RPOTPData(this, 'OTP_DATA_BASE', this.otp),
     0x40160: new RPTBMAN(this, 'TBMAN_BASE'),
 
     0x50000: this.dma,
