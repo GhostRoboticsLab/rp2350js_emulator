@@ -109,6 +109,10 @@ export class RP2350 implements IRPChip {
     }),
   ];
 
+  // RP2350 watchdog: 1 MHz tick (no RP2040-E1 errata doubling). Named field so the SCRATCH
+  // registers (reboot-to-BOOTSEL / boot rendezvous) and REASON are addressable and testable.
+  readonly watchdog = new RPWatchdog(this, 'WATCHDOG_BASE', 1_000_000);
+
   public logger: Logger = new ConsoleLogger(LogLevel.Debug, true);
 
   readonly peripherals: { [index: number]: Peripheral } = {
@@ -139,7 +143,7 @@ export class RP2350 implements IRPChip {
     0x400c0: new UnimplementedPeripheral(this, 'HSTX_CTRL_BASE'),
     0x400d0: new UnimplementedPeripheral(this, 'XIP_QMI_BASE'),
 
-    0x400d8: new UnimplementedPeripheral(this, 'WATCHDOG_BASE'), //TODO new RPWatchdog(this, 'WATCHDOG_BASE'),
+    0x400d8: this.watchdog,
     //0x400xx: new RP2040RTC(this, 'RTC_BASE'),
     0x400e0: new RPBootRAM(this, 'BOOTRAM_BASE'),
     0x400e8: new UnimplementedPeripheral(this, 'ROSC_BASE'),

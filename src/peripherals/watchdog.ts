@@ -59,10 +59,11 @@ export class RPWatchdog extends BasePeripheral implements Peripheral {
     this.rp2040.logger.warn(this.name, 'Watchdog triggered, but no reset handler provided');
   };
 
-  // User provided
-  constructor(rp2040: IRPChip, name: string) {
+  // User provided. tickFrequency defaults to the RP2040 value (2 MHz — the RP2040-E1 errata
+  // double-decrements each 1 MHz tick); RP2350 has no such errata and passes 1_000_000.
+  constructor(rp2040: IRPChip, name: string, tickFrequency: number = TICK_FREQUENCY) {
     super(rp2040, name);
-    this.timer = new Timer32(rp2040.clock, TICK_FREQUENCY);
+    this.timer = new Timer32(rp2040.clock, tickFrequency);
     this.timer.mode = TimerMode.Decrement;
     this.timer.enable = false;
     this.alarm = new Timer32PeriodicAlarm(this.timer, () => {
