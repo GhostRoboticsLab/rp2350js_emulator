@@ -1,8 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestDriver } from '../test-utils/create-test-driver.js';
 import { ICortexTestDriver } from '../test-utils/test-driver.js';
 import { SIO_START_ADDRESS } from './rp2040.js';
 import { RP2350 } from './rp2350.js';
+import { Core } from './core.js';
+import { IRQ } from './irq_rp2350.js';
 
 //Hardware Divider registers absolute address
 const SIO_DIV_UDIVIDEND = SIO_START_ADDRESS + 0x060; //  Divider unsigned dividend
@@ -49,6 +51,31 @@ describe('SIO FIFO_ST write-1-to-clear (WOF/ROE)', () => {
     c2.writeUint32(FIFO_ST, WOF_BIT | ROE_BIT);
     expect(c2.WOF).toBe(false);
     expect(c2.ROE).toBe(false);
+  });
+});
+
+// The RP2350-new inter-core DOORBELL was undecoded — reads returned 0xffffffff and SIO_IRQ_BELL never
+// fired, breaking pico-sdk multicore_doorbell_*. OUT_* on one core rings the other; IN_* is self /
+// acknowledge; a core takes SIO_IRQ_BELL while it has any incoming bell.
+describe('SIO inter-core DOORBELL', () => {
+  const OUT_SET = 0x180;
+  const IN_SET = 0x188;
+  const IN_CLR = 0x18c;
+
+  it('core0 ringing appears on core1, raises SIO_IRQ_BELL, and clears on acknowledge', () => {
+    const mcu = new RP2350();
+    const spy = vi.spyOn(mcu, 'setInterruptCore');
+    const BELL = 1 << 3;
+
+    mcu.sio.writeUint32(OUT_SET, BELL, Core.Core0); // core0 rings bell 3 on core1
+    expect(mcu.sio.readUint32(IN_SET, Core.Core1)).toBe(BELL); // core1's incoming (was 0xffffffff)
+    expect(mcu.sio.readUint32(OUT_SET, Core.Core0)).toBe(BELL); // core0's outgoing view
+    expect(mcu.sio.readUint32(IN_SET, Core.Core0)).toBe(0); // core0 has nothing incoming
+    expect(spy).toHaveBeenCalledWith(IRQ.SIO_IRQ_BELL, true, Core.Core1);
+
+    mcu.sio.writeUint32(IN_CLR, BELL, Core.Core1); // core1 acknowledges
+    expect(mcu.sio.readUint32(IN_SET, Core.Core1)).toBe(0);
+    expect(spy).toHaveBeenCalledWith(IRQ.SIO_IRQ_BELL, false, Core.Core1);
   });
 });
 

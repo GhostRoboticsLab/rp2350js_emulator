@@ -1,6 +1,7 @@
 import { IRPChip } from './rpchip.js';
 import { Core } from './core.js';
 import { RPSIOCore } from './sio-core.js';
+import { IRQ } from './irq_rp2350.js';
 
 const CPUID = 0x000;
 
@@ -33,12 +34,24 @@ const SPINLOCK_ST = 0x5c;
 const SPINLOCK0 = 0x100;
 const SPINLOCK31 = 0x17c;
 
+// DOORBELL (RP2350) — cross-core notification. OUT_* ring/rescind bells on the OTHER core; IN_* set
+// (self-ring) / acknowledge bells on THIS core. Reading OUT_* returns the outgoing state (bells this
+// core has set on the other); reading IN_* returns this core's incoming bells. SIO_IRQ_BELL is
+// asserted on a core while it has any incoming bell set.
+const DOORBELL_OUT_SET = 0x180;
+const DOORBELL_OUT_CLR = 0x184;
+const DOORBELL_IN_SET = 0x188;
+const DOORBELL_IN_CLR = 0x18c;
+
 export class RPSIO {
   gpioValue = 0;
   gpioOutputEnable = 0;
   gpioHiValue = 0;
   gpioHiOutputEnable = 0;
   spinLock = 0;
+  // Incoming doorbell bitmask per core (indexed by Core). A core takes SIO_IRQ_BELL while its entry
+  // is non-zero. OUT_* on one core writes the other core's entry; IN_* writes its own.
+  readonly doorbellIn = [0, 0];
   readonly core0;
   readonly core1;
 
@@ -104,6 +117,13 @@ export class RPSIO {
         break;
       case SPINLOCK_ST:
         return this.spinLock;
+      case DOORBELL_OUT_SET:
+      case DOORBELL_OUT_CLR:
+        // Outgoing view: the bells this core has rung on the other core.
+        return this.doorbellIn[core === Core.Core0 ? Core.Core1 : Core.Core0];
+      case DOORBELL_IN_SET:
+      case DOORBELL_IN_CLR:
+        return this.doorbellIn[core]; // incoming bells on this core
     }
     // Divider, Interpolator, FIFO get handled per core in sio-core
     switch (core) {
@@ -112,6 +132,11 @@ export class RPSIO {
       case Core.Core1:
         return this.core1.readUint32(offset);
     }
+  }
+
+  private ringDoorbell(target: Core, setMask: number, clearMask: number) {
+    this.doorbellIn[target] = (this.doorbellIn[target] | setMask) & ~clearMask;
+    this.rp2040.setInterruptCore(IRQ.SIO_IRQ_BELL, this.doorbellIn[target] !== 0, target);
   }
 
   writeUint32(offset: number, value: number, core: Core) {
@@ -172,6 +197,18 @@ export class RPSIO {
         break;
       case GPIO_HI_OE_XOR:
         this.gpioHiOutputEnable ^= value & GPIO_MASK;
+        break;
+      case DOORBELL_OUT_SET: // ring bells on the other core
+        this.ringDoorbell(core === Core.Core0 ? Core.Core1 : Core.Core0, value, 0);
+        break;
+      case DOORBELL_OUT_CLR: // rescind bells on the other core
+        this.ringDoorbell(core === Core.Core0 ? Core.Core1 : Core.Core0, 0, value);
+        break;
+      case DOORBELL_IN_SET: // self-ring bells on this core
+        this.ringDoorbell(core, value, 0);
+        break;
+      case DOORBELL_IN_CLR: // acknowledge bells on this core
+        this.ringDoorbell(core, 0, value);
         break;
       default:
         // Divider, Interpolator, FIFO get handled per core in sio-core
