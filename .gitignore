@@ -4,3 +4,4 @@ dist
 *.elf
 *.uf2
 *.img
+.DS_Store
