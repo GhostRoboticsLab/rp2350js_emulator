@@ -88,6 +88,20 @@ export class RPSIOCore {
     private readonly core_other: Core
   ) {}
 
+  // --- core1 launch handshake helpers ---
+  // The emulator stands in for the bootrom's core1 "wait for vector" loop, echoing core0's launch
+  // handshake back through the real cross-wired inter-core FIFOs (this core's rx = the other core's
+  // tx). Used only while core1 is held for launch; see RPSIO.core1LaunchPoll / RP2350.stepCores.
+  get launchHasIncoming(): boolean {
+    return !this.rxFIFO.empty;
+  }
+  launchPopIncoming(): number {
+    return this.rxFIFO.pull();
+  }
+  launchEcho(value: number): void {
+    if (!this.txFIFO.full) this.txFIFO.push(value);
+  }
+
   readUint32(offset: number) {
     switch (offset) {
       case DIV_UDIVIDEND:

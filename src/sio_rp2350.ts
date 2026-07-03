@@ -55,6 +55,13 @@ export class RPSIO {
   readonly core0;
   readonly core1;
 
+  // core1 launch handshake state (emulating the bootrom wait-for-vector loop). The SDK sends
+  // {0, 0, 1, vector_table, sp, entry} over the inter-core FIFO and expects each value echoed;
+  // a 0 resyncs, a 1 starts capture, then the next three are vtor/sp/entry.
+  private launchWaiting = false;
+  private launchCapturing = false;
+  private launchBuf: number[] = [];
+
   constructor(private readonly rp2040: IRPChip, readonly sio_proc0_irq: number, readonly sio_proc1_irq: number) {
     const cores = RPSIOCore.create2Cores(rp2040, sio_proc0_irq, sio_proc1_irq);
     this.core0 = cores[0];
@@ -137,6 +144,43 @@ export class RPSIO {
   private ringDoorbell(target: Core, setMask: number, clearMask: number) {
     this.doorbellIn[target] = (this.doorbellIn[target] | setMask) & ~clearMask;
     this.rp2040.setInterruptCore(IRQ.SIO_IRQ_BELL, this.doorbellIn[target] !== 0, target);
+  }
+
+  /** Put core1 into the launch wait-loop and post the bootrom "alive" 0 to core0's mailbox. */
+  enterCore1LaunchWait() {
+    this.launchWaiting = true;
+    this.launchCapturing = false;
+    this.launchBuf = [];
+    this.core1.launchEcho(0); // core1 signals it drained its FIFO and is ready (multicore_reset_core1)
+  }
+
+  /**
+   * Service the core1 launch handshake: echo every value core0 pushes and track the
+   * {0, 0, 1, vector_table, sp, entry} sequence. Returns the launch parameters once complete
+   * (core0's echoes matched, so no resync was needed), otherwise null. Call once per step while held.
+   */
+  core1LaunchPoll(): { vtor: number; sp: number; entry: number } | null {
+    if (!this.launchWaiting) return null;
+    while (this.core1.launchHasIncoming) {
+      const v = this.core1.launchPopIncoming() >>> 0;
+      this.core1.launchEcho(v); // echo back to core0's mailbox
+      if (v === 0) {
+        this.launchCapturing = false;
+        this.launchBuf = [];
+        continue;
+      }
+      if (!this.launchCapturing) {
+        if (v === 1) this.launchCapturing = true; // the "1" marker precedes vtor/sp/entry
+        continue;
+      }
+      this.launchBuf.push(v);
+      if (this.launchBuf.length === 3) {
+        this.launchWaiting = false;
+        const [vtor, sp, entry] = this.launchBuf;
+        return { vtor, sp, entry };
+      }
+    }
+    return null;
   }
 
   writeUint32(offset: number, value: number, core: Core) {

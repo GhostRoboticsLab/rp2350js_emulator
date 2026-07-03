@@ -180,6 +180,18 @@ export class RP2350 implements IRPChip {
   }
 
   isCore0Running = true;
+
+  // core1 runs firmware from reset by default (existing single-image tests drive both cores). Real
+  // SDK firmware instead holds core1 in the bootrom until multicore_launch_core1; a harness opts into
+  // that faithful model with holdCore1ForLaunch(), after which core1 launches via the FIFO handshake.
+  private core1Launched = true;
+
+  /** Hold core1 in the bootrom launch wait-loop until core0 runs multicore_launch_core1(). */
+  holdCore1ForLaunch() {
+    this.core1Launched = false;
+    this.sio.enterCore1LaunchWait();
+  }
+
   loadBootrom(bootromData: Uint32Array) {
     this.bootrom.set(bootromData);
     this.reset();
@@ -463,9 +475,24 @@ export class RP2350 implements IRPChip {
     this.isCore0Running = true;
     this.core0.executeInstruction();
     this.isCore0Running = false;
-    while(this.core1.cycles < this.core0.cycles) {
-      //if(this.core0.cycles>(1<<0)) console.log(`core1: ${this.core1.cycles}, waiting: ${this.core1.waiting}`);
-      this.core1.executeInstruction();
+    if (!this.core1Launched) {
+      // core1 is held in the bootrom launch wait-loop: service the FIFO handshake instead of
+      // executing firmware, and configure + release core1 once multicore_launch_core1 completes.
+      const info = this.sio.core1LaunchPoll();
+      if (info) {
+        this.core1.pc = info.entry >>> 0;
+        this.core1.registerSet.setRegisterU(2, info.sp >>> 0); // x2 = initial stack pointer
+        this.core1.setCSR(0x305, info.vtor >>> 0, 0); // mtvec = vector table
+        this.core1.waiting = false;
+        this.core1.stopped = false;
+        this.core1Launched = true;
+      }
+      this.core1.cycles = this.core0.cycles; // keep core1 in lockstep while held / at launch
+    } else {
+      while(this.core1.cycles < this.core0.cycles) {
+        //if(this.core0.cycles>(1<<0)) console.log(`core1: ${this.core1.cycles}, waiting: ${this.core1.waiting}`);
+        this.core1.executeInstruction();
+      }
     }
     return this.core0.cycles - core0StartCycles;
   }
