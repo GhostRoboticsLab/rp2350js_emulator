@@ -23,6 +23,7 @@ import { RPSPI } from './peripherals/spi.js';
 import { RP2350SysCfg } from './peripherals/syscfg_rp2350.js';
 import { RP2350SysInfo } from './peripherals/sysinfo_rp2350.js';
 import { RPTBMAN } from './peripherals/tbman.js';
+import { RPTicks } from './peripherals/ticks.js';
 import { RPTimer } from './peripherals/timer.js';
 import { RPUART } from './peripherals/uart.js';
 import { RPUSBController } from './peripherals/usb.js';
@@ -148,7 +149,7 @@ export class RP2350 implements IRPChip {
     0x400e0: new RPBootRAM(this, 'BOOTRAM_BASE'),
     0x400e8: new UnimplementedPeripheral(this, 'ROSC_BASE'),
     0x40100: new RPPOWMAN(this, 'POWMAN_BASE'),
-    0x40108: new UnimplementedPeripheral(this, 'TICKS_BASE'),
+    0x40108: new RPTicks(this, 'TICKS_BASE'),
     0x40160: new RPTBMAN(this, 'TBMAN_BASE'),
 
     0x50000: this.dma,
