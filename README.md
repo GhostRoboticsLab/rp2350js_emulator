@@ -1,5 +1,5 @@
 [![CI](../../actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-379%20passing-brightgreen.svg)](#quick-start)
+[![Tests](https://img.shields.io/badge/tests-409%20passing-brightgreen.svg)](#quick-start)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A518-339933.svg?logo=node.js&logoColor=white)](./package.json)
 [![TypeScript](https://img.shields.io/badge/TypeScript-ESM-3178c6.svg?logo=typescript&logoColor=white)](#layout)
@@ -39,7 +39,7 @@ this emulator was built to bring up.*
 > up through a faithful `multicore_launch_core1` PSM/FIFO handshake. All firmware-integration gates
 > pass — **`blink_simple`** (GPIO via SIO), **`hello_timer`** (a 250M-step timer-IRQ run), **`pio_blink`**
 > (two PIO blocks driving GPIO3 and GPIO32 through the GPIOBASE pin-window), and the **`ghostshow`**
-> carrier twin in both single- and dual-core builds. **All 379 tests pass, none skipped.** See
+> carrier twin in both single- and dual-core builds. **All 409 tests pass, none skipped.** See
 > **[ROADMAP.md](./ROADMAP.md)** for the defect log and deferred work, and
 > [Known boundaries](#known-boundaries--dont-mistake-green-for-silicon) for what is deliberately *not*
 > modelled.
@@ -70,6 +70,8 @@ chip, so a single parameterized class usually serves both.
 | **Timers / IRQ** | RP2350 TIMER IRQ base + INTR/INTE/INTF/INTS offsets, Xh3irq external-IRQ delivery | upstream |
 | **PWM** | 12 slices, corrected EN read-back | 8 slices (upstream) |
 | **Watchdog** | 1 MHz tick + working SCRATCH registers | 2 MHz (RP2040-E1) |
+| **Power / timekeeping** | POWMAN 64-bit always-on timer (free-running) + 0x5afe write-password; TICKS tick generators | — |
+| **Security / OTP** | OTP fuse array + guarded ECC read window; **real SHA-256** (FIPS 180-4 tested); seeded TRNG; benign glitch detector; ACCESSCTRL + PMP CSR state (stored, unenforced) | — |
 | **DMA / UART / SPI / I²C / ADC / USB** | chip-aware IRQ/DREQ ids, DREQ-driven pacing | upstream |
 | **Tooling** | `start:rp2350` CLI runner; family-id-aware UF2 loader (routes flash vs SRAM, **rejects Arm images loudly**) | `npm start` demo + GDB server |
 
@@ -129,8 +131,11 @@ silently trapping `mcause=2`.
   rates are approximate until per-firmware PLL-driven clocking lands (deferred to avoid shifting the
   `hello_timer` gate).
 - **Cold-boot ROM sequence is bypassed** — PC is set to the image entry rather than run through the
-  bootrom's image-parse/secure-boot; OTP/secure-boot/TICKS gating is absent. (Core1 *launch* itself
-  **is** modelled.)
+  bootrom's image-parse/secure-boot. OTP and TICKS registers read back faithfully, but nothing *gates*
+  on them: secure-boot isn't enforced and the timers free-run rather than being clocked by TICKS.
+  (Core1 *launch* itself **is** modelled.)
+- **State without enforcement.** M/U privilege, PMP, and ACCESSCTRL are stored and read back correctly,
+  but no access faults are raised — enforcement is deferred behind a fault-injection harness.
 - **Dual-core stepping is core0-favoured quantised lockstep** — a green multicore test does **not**
   prove race-freedom.
 
@@ -138,7 +143,7 @@ silently trapping `mcause=2`.
 
 ```bash
 npm install                          # Node >= 18
-npm test                             # 379 pass, 0 skipped. hello_timer ~22s (a 250M-step firmware run)
+npm test                             # 409 pass, 0 skipped. hello_timer ~22s (a 250M-step firmware run)
 
 npx vitest run src/riscv             # RISC-V instruction-correctness suite only
 npx vitest run src/rp2350.spec.ts    # RP2350 firmware integration tests only

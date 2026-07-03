@@ -116,6 +116,29 @@ and in the browser digital twin. See `plan.md` for the full tiered record. Highl
 | Peripherals | watchdog enabled (1 MHz tick, working SCRATCH); PWM 12 slices + fixed EN read-back | ✅ |
 | Tooling | `npm run start:rp2350` CLI + family-id-aware UF2 loader (routes flash/SRAM; **rejects Arm images loudly**) | ✅ |
 
+## Done — RP2350-new peripheral blocks & architectural honesty (Tiers 4 & 5)
+
+The remaining RP2350-only blocks that used to **throw** (unmapped) or **lie** (`UnimplementedPeripheral`
+returns `0xffffffff`) are now real register models, each with a falsifiable `*_rp2350.spec.ts`. None
+are exercised by the ghostshow twin, so each lands with its own negative-control test.
+
+| Block | Model | Status |
+|---|---|---|
+| POWMAN | AON 64-bit timer (free-runs off the chip clock) + 0x5afe write-password gate → BADPASSWD | ✅ 4.2 |
+| TICKS | six tick generators, store-and-readback, RUNNING mirrors ENABLE (timers **not** gated on it — keeps `hello_timer` stable) | ✅ 4.4 |
+| OTP + OTP_DATA | interface regs (store-and-readback) + guarded ECC row window over a seedable 4096-row fuse array | ✅ 4.1 |
+| SHA-256 | **real** compression engine, FIPS 180-4 vector-tested ("abc", empty); BSWAP honoured | ✅ 4.5 |
+| TRNG | seeded xorshift32 (deterministic EHR) behind the real enable/valid/consume interface | ✅ 4.5 |
+| GLITCH_DETECTOR | benign — ARM resets 0x5bad, TRIG_STATUS always 0 (never trips) | ✅ 4.5 |
+| Privilege M/U | trapEntry saves privilege→MPP + enters M; mret restores; ecall cause 8 (U) / 11 (M) | ✅ 5.1 |
+| PMP CSRs | pmpcfg0–3 + pmpaddr0–15 store-and-readback (pmpaddr8–15 were dropped) | ✅ 5.3 |
+| ACCESSCTRL | explicit reset state (LOCK=0x4, per-target gates=0xff); CFGRESET restores | ✅ 5.3 |
+
+**Still store-only, not enforced (deferred):** privilege / PMP / ACCESSCTRL raise no access faults;
+OTP fuse *programming* (SBPI) and POWMAN alarm/PWRUP sequencing are unmodelled. No firmware gate here
+runs in U-mode, trips a region, or burns a fuse, so enforcement is staged behind its own fault-injection
+harness rather than faked.
+
 ### Known boundaries (deliberately not modelled — do not mistake green for silicon)
 
 - **No Arm Cortex-M33 path.** This fork emulates only the two Hazard3 RISC-V cores; the SDK's default
@@ -125,13 +148,15 @@ and in the browser digital twin. See `plan.md` for the full tiered record. Highl
   peripheral rates are off until per-firmware PLL-driven clocking lands (deferred to avoid shifting the
   `hello_timer` gate).
 - **Cold-boot ROM sequence is bypassed** (PC is set to the image entry rather than run through the
-  bootrom's image parse/secure-boot); OTP/secure-boot/TICKS gating absent. (Core1 launch itself *is*
-  now modelled: `holdCore1ForLaunch()` + the SIO FIFO handshake bring core1 up faithfully.)
+  bootrom's image parse/secure-boot). OTP and TICKS registers now read back faithfully, but nothing
+  *gates* on them — secure-boot isn't enforced and the timers free-run rather than being clocked by
+  TICKS. (Core1 launch itself *is* modelled: `holdCore1ForLaunch()` + the SIO FIFO handshake.)
 - **Leader/follower dual-core stepping** is core0-favoured quantised lockstep — a green multicore test
   does **not** prove race-freedom.
 
-Deferred items (OTP/POWMAN/TICKS/SHA models, privilege M/U, PSM core1 launch, PMP CSRs, GDB target +
-disassembler, PLL-driven clocking, assembler-based ISA harness) are tracked in `plan.md`.
+Deferred items (GDB target + disassembler, PLL-driven clocking, assembler-based ISA harness, and the
+*enforcement* of privilege/PMP/ACCESSCTRL/secure-boot whose state is now modelled) are tracked in
+`plan.md`.
 
 ## Later — upstreaming to Wokwi
 

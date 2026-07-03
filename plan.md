@@ -135,7 +135,7 @@ cd …/pga2350-carrier/firmware/ghostshow/sim && npm run dev   # http://localhos
 image (both carriers), decodes the GP28 WS2812 line into 24-px frames, asserts boot/console/power/
 input. The carrier web twin (`…/ghostshow/sim`) is repointed from the vendored c1570 engine to **this
 fork** via a symlink (+ `vite.config` fs.allow) and runs live with HMR — editing the fork hot-reloads
-the ghost. Confirmed rendering in colour in the browser. Suite: **377 pass** (was 348).
+the ghost. Confirmed rendering in colour in the browser. Suite: **409 pass** (was 348).
 
 ### Landed (each its own signed commit, negative-control tested, suite green)
 
@@ -159,6 +159,20 @@ the ghost. Confirmed rendering in colour in the browser. Suite: **377 pass** (wa
   sim firmware (`ghostshow_mc`, `-DGHOSTSHOW_SIM_MC=1`) with a `busy_wait` frame pace (the WS2812
   reset gap `field_step` used to provide). Live in the web twin as **"Carrier (full) · dual-core"**.
 - Added the first `*_rp2350` peripheral specs (watchdog, pwm) — starts closing Tier 4.22's gap.
+- **Tier 4.2** ✅ POWMAN AON 64-bit timer (SET_TIME/READ_TIME, free-runs off the chip clock) + the
+  0x5afe write-password gate with BADPASSWD latch. Was a near-empty stub (timer read 0xffffffff).
+- **Tier 4.4** ✅ TICKS block — six tick generators (store-and-readback, RUNNING mirrors ENABLE). Was
+  UnimplementedPeripheral (every generator read as already-RUNNING with a garbage divider). The
+  timers are deliberately NOT gated on TICKS (hello_timer never programs it — would freeze the gate).
+- **Tier 4.1** ✅ OTP interface + guarded OTP_DATA row window over a seedable 4096-row fuse array
+  (`rp2350.otp.fuse`). Both blocks were unmapped → any chip-id/boot-flag read threw.
+- **Tier 4.5** ✅ Real SHA-256 accelerator (FIPS 180-4 vectors: "abc", empty), seeded-PRNG TRNG
+  (deterministic EHR), benign GLITCH_DETECTOR (TRIG_STATUS always 0). All three were unmapped → threw.
+- **Tier 5.1** ✅ M/U privilege tracking — trapEntry saves privilege to MSTATUS.MPP + enters M-mode,
+  mret restores it, ecall cause is 8 (from U) / 11 (from M). Inert for the M-mode firmware gates.
+  (CSR/memory-access *enforcement* still deferred — this is the state model.)
+- **Tier 5.3** ✅ Store PMP CSRs (pmpaddr8..15 were dropped → read back 0) + explicit-reset
+  ACCESSCTRL (LOCK=0x4, per-target gates=0xff; was 0xffffffff). Permissions unenforced (deferred).
 
 ### Deferred (with rationale — captured as todos, not silently dropped)
 
@@ -171,10 +185,15 @@ the ghost. Confirmed rendering in colour in the browser. Suite: **377 pass** (wa
   assembler to all of A/Zb*/C is a large separate task.
 - **Tier 2.3/2.4 (Hazard3 GDB target + RISC-V disassembler)** ⏸ — large; the CLI runner covers the
   common "run a .uf2" need.
-- **Tier 4.1/4.2/4.4/4.5 (OTP, POWMAN AON timer, TICKS, SHA-256/TRNG)** ⏸ — register-model stubs to
-  stop unmapped-throw / 0xffffffff-lie; not exercised by the ghostshow twin, so staged behind the
-  higher-value ISA/timing work.
-- **Tier 5.1 / 5.3-rest (privilege M/U, PMP CSR storage)** ⏸. (5.2 core1 launch is now **done** — see above.)
+- **Tier 3.2 / TICKS gating (drive the timers off `clk_sys`/TICKS)** ⏸ — the TICKS block and POWMAN
+  timer are now modelled, but the system timers are still free-running (not gated on TICKS, not
+  PLL-clocked) to keep the `hello_timer` 250M-step gate stable. Same deferral rationale as 3.2 above.
+- **Enforcement of privilege / PMP / ACCESSCTRL** ⏸ — the state is now stored and readable (5.1/5.3),
+  but access faults are not raised. No firmware gate runs in U-mode or trips a region, so enforcement
+  is staged separately behind a fault-injection test harness.
+- **Tier 4.5-rest (OTP fuse programming via SBPI, real POWMAN alarm/PWRUP sequencing)** ⏸ — the read
+  paths and the AON timer are modelled; fuse burning and the low-power power-state machine are not
+  exercised by any firmware here.
 - **Tier 5.4 (Arm Cortex-M33 core)** ⏸ — out of scope (multi-month; M0+ not reusable). Documented as
   a hard boundary; the UF2 loader now rejects Arm images loudly.
 
