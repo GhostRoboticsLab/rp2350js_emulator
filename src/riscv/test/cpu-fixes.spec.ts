@@ -160,3 +160,66 @@ describe('Performance counters read the live counts (were undecoded, read 0)', (
     expect(cpu.getCSR(0xc02, 0) >>> 0).toBe(42); // instret
   });
 });
+
+describe('RV32A atomics (only amoswap/amoor/amoand existed; the rest aborted the core)', () => {
+  const ADDR = 0x20000010; // SRAM
+  // Build an AMO/LR/SC encoding. func7 = funct5<<2 | aqrl; funct3 = 0b010; opcode = 0x2f.
+  const amo = (funct5: number, rd: number, rs1: number, rs2: number, aqrl = 0) =>
+    ((((funct5 << 2) | aqrl) << 25) | (rs2 << 20) | (rs1 << 15) | (0x2 << 12) | (rd << 7) | 0x2f) >>> 0;
+
+  function setup(mem: number, operand: number) {
+    const cpu = freshCore();
+    cpu.chip.writeUint32(ADDR, mem);
+    cpu.registerSet.setRegisterU(1, ADDR); // x1 = address
+    cpu.registerSet.setRegisterU(2, operand >>> 0); // x2 = operand
+    return cpu;
+  }
+
+  test('amoadd.w: memory += rs2, rd = old value', () => {
+    const cpu = setup(100, 23);
+    cpu.step(amo(0x00, 3, 1, 2)); // amoadd.w x3, x2, (x1) — previously threw
+    expect(cpu.registerSet.getRegisterU(3) >>> 0).toBe(100); // rd = original
+    expect(cpu.chip.readUint32(ADDR) >>> 0).toBe(123); // memory updated
+  });
+
+  test('amoxor.w', () => {
+    const cpu = setup(0xf0f0, 0x0ff0);
+    cpu.step(amo(0x04, 3, 1, 2));
+    expect(cpu.chip.readUint32(ADDR) >>> 0).toBe((0xf0f0 ^ 0x0ff0) >>> 0);
+  });
+
+  test('amomin.w is signed, amominu.w is unsigned', () => {
+    let cpu = setup(0xffffffff, 1); // signed -1 vs 1
+    cpu.step(amo(0x10, 3, 1, 2)); // amomin.w -> -1
+    expect(cpu.chip.readUint32(ADDR) >>> 0).toBe(0xffffffff);
+    cpu = setup(0xffffffff, 1); // unsigned 4294967295 vs 1
+    cpu.step(amo(0x18, 3, 1, 2)); // amominu.w -> 1
+    expect(cpu.chip.readUint32(ADDR) >>> 0).toBe(1);
+  });
+
+  test('amomaxu.w is unsigned', () => {
+    const cpu = setup(0xffffffff, 1);
+    cpu.step(amo(0x1c, 3, 1, 2)); // amomaxu.w -> 0xffffffff
+    expect(cpu.chip.readUint32(ADDR) >>> 0).toBe(0xffffffff);
+  });
+
+  test('ordering-annotated variants (.aqrl) decode via funct5', () => {
+    const cpu = setup(5, 7);
+    cpu.step(amo(0x00, 3, 1, 2, 0b11)); // amoadd.w.aqrl
+    expect(cpu.chip.readUint32(ADDR) >>> 0).toBe(12);
+  });
+
+  test('LR.W/SC.W round-trip: SC succeeds after LR, then fails (reservation cleared)', () => {
+    const cpu = setup(111, 0);
+    cpu.step(amo(0x02, 3, 1, 0)); // lr.w x3, (x1)
+    expect(cpu.registerSet.getRegisterU(3) >>> 0).toBe(111); // rd = loaded value
+    cpu.registerSet.setRegisterU(2, 222);
+    cpu.step(amo(0x03, 4, 1, 2)); // sc.w x4, x2, (x1)
+    expect(cpu.registerSet.getRegisterU(4) >>> 0).toBe(0); // success
+    expect(cpu.chip.readUint32(ADDR) >>> 0).toBe(222);
+    cpu.registerSet.setRegisterU(2, 333);
+    cpu.step(amo(0x03, 4, 1, 2)); // sc.w again — reservation was cleared
+    expect(cpu.registerSet.getRegisterU(4) >>> 0).toBe(1); // failure
+    expect(cpu.chip.readUint32(ADDR) >>> 0).toBe(222); // memory unchanged
+  });
+});

@@ -25,6 +25,8 @@ export class CPU {
   stopped = false; //TODO
   cycles = 0;
   retired = 0; // retired-instruction count, exposed via minstret/instret CSRs
+  reservationValid = false; // LR/SC reservation set (address in reservationAddr)
+  reservationAddr = 0;
   currentMode: ExecutionMode = ExecutionMode.Mode_Machine;
 
   interruptsUpdated = false;
@@ -64,6 +66,7 @@ export class CPU {
     this.did_just_jump = false;
     this.waiting = false;
     this.eventRegistered = false;
+    this.reservationValid = false;
     this.inst_length = 0;
     this.meiea.fill(0);
     this.meipa.fill(0);
@@ -932,36 +935,54 @@ const opcode0x23func3Table: FuncTable<S_Type> = new Map([
 ]);
 
 const opcode0x2ffunc3Table: FuncTable<R_Type> = new Map([
+  // RV32A (word AMOs + LR/SC). func7 is [funct5(5) | aq | rl]; dispatch on funct5 = func7 >> 2 so
+  // every ordering-annotated variant (.aq/.rl/.aqrl) decodes. Was only amoswap/amoor/amoand at exact
+  // func7 values, so amoadd/xor/min/max/lr/sc — freely emitted by <stdatomic.h>/std::atomic and
+  // compare-exchange loops (misa advertises A) — hit the default `throw` and aborted the core.
   [0x2, (instruction: R_Type, cpu: CPU) => {
-
     const { rd, rs1, rs2, func7 } = instruction;
     const { registerSet, chip } = cpu;
+    const addr = registerSet.getRegisterU(rs1);
+    const funct5 = func7 >>> 2;
 
-    const rs1Value = registerSet.getRegisterU(rs1);
-    const rs2Value = registerSet.getRegisterU(rs2);
-    if (func7 === 0x4) { // amoswap.w (rv32a)
-      // 08a5a52f amoswap.w a0,a0,(a1)
-      const rs1Mem = chip.readUint32(rs1Value);
-      const value = rs2Value;
-      registerSet.setRegisterU(rd, rs1Mem);
-      chip.writeUint32(rs1Value, value);
-      cpu.cycles += 3;
-    } else if (func7 === 0x22 || func7 === 0x20) { // amoor.w.aq and amoor.w (rv32a)
-      // 44e7a6af amoor.w.aq a3,a4,(a5)
-      // 40c3a52f amoor.w a0,a2,(t2)
-      const rs1Mem = chip.readUint32(rs1Value);
-      registerSet.setRegisterU(rd, rs1Mem);
-      const value = rs1Mem | rs2Value;
-      chip.writeUint32(rs1Value, value);
-      cpu.cycles += 3;
-    } else if (func7 === 0x30) { // amoand.w (rv32a)
-      // 60b7a02f amoand.w zero,a1,(a5)
-      const rs1Mem = chip.readUint32(rs1Value);
-      registerSet.setRegisterU(rd, rs1Mem);
-      const value = rs1Mem & rs2Value;
-      chip.writeUint32(rs1Value, value);
-      cpu.cycles += 3;
-    } else throw Error(`Unknown instruction, func7: 0x${func7.toString(16)}`);
+    if (funct5 === 0x02) { // lr.w — load word, set the reservation
+      const value = chip.readUint32(addr);
+      cpu.reservationValid = true;
+      cpu.reservationAddr = addr;
+      registerSet.setRegisterU(rd, value);
+      cpu.cycles += 1;
+      return;
+    }
+    if (funct5 === 0x03) { // sc.w — store conditional; rd = 0 success, 1 fail
+      const success = cpu.reservationValid && cpu.reservationAddr === addr;
+      if (success) chip.writeUint32(addr, registerSet.getRegisterU(rs2));
+      cpu.reservationValid = false; // SC always clears the reservation
+      registerSet.setRegisterU(rd, success ? 0 : 1);
+      cpu.cycles += 1;
+      return;
+    }
+
+    // AMOs: rd = original memory value; memory = f(original, rs2).
+    const orig = chip.readUint32(addr) >>> 0;
+    const b = registerSet.getRegisterU(rs2) >>> 0;
+    let result: number;
+    switch (funct5) {
+      case 0x00: result = (orig + b) | 0; break; // amoadd.w
+      case 0x01: result = b; break; // amoswap.w
+      case 0x04: result = orig ^ b; break; // amoxor.w
+      case 0x08: result = orig | b; break; // amoor.w
+      case 0x0c: result = orig & b; break; // amoand.w
+      case 0x10: result = (orig | 0) < (b | 0) ? orig : b; break; // amomin.w  (signed)
+      case 0x14: result = (orig | 0) > (b | 0) ? orig : b; break; // amomax.w  (signed)
+      case 0x18: result = (orig >>> 0) < (b >>> 0) ? orig : b; break; // amominu.w (unsigned)
+      case 0x1c: result = (orig >>> 0) > (b >>> 0) ? orig : b; break; // amomaxu.w (unsigned)
+      default:
+        throw Error(`Unknown AMO funct5: 0x${funct5.toString(16)} (func7 0x${func7.toString(16)})`);
+    }
+    registerSet.setRegisterU(rd, orig);
+    chip.writeUint32(addr, result >>> 0);
+    if (cpu.reservationValid && cpu.reservationAddr === addr) cpu.reservationValid = false;
+    cpu.cycles += 3;
   }],
 ]);
 
