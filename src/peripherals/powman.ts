@@ -53,7 +53,7 @@ export class RPPOWMAN extends BasePeripheral implements Peripheral {
       case BADPASSWD:
         return this.badPasswd ? 1 : 0;
       case READ_TIME_LOWER:
-        return (Math.floor(this.nowMs()) % TWO32) >>> 0;
+        return Math.floor(this.nowMs()) % TWO32 >>> 0;
       case READ_TIME_UPPER:
         return Math.floor(Math.floor(this.nowMs()) / TWO32) >>> 0;
       case TIMER:

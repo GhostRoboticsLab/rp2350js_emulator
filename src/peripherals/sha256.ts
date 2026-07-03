@@ -43,7 +43,11 @@ function rotr(x: number, n: number): number {
 
 function byteswap(w: number): number {
   return (
-    (((w >>> 24) & 0xff) | ((w >>> 8) & 0xff00) | ((w << 8) & 0xff0000) | ((w << 24) & 0xff000000)) >>> 0
+    (((w >>> 24) & 0xff) |
+      ((w >>> 8) & 0xff00) |
+      ((w << 8) & 0xff0000) |
+      ((w << 24) & 0xff000000)) >>>
+    0
   );
 }
 
@@ -71,8 +75,14 @@ export class RPSHA256 extends BasePeripheral implements Peripheral {
       const s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >>> 10);
       w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0;
     }
-    let a = this.h[0], b = this.h[1], c = this.h[2], d = this.h[3];
-    let e = this.h[4], f = this.h[5], g = this.h[6], hh = this.h[7];
+    let a = this.h[0],
+      b = this.h[1],
+      c = this.h[2],
+      d = this.h[3];
+    let e = this.h[4],
+      f = this.h[5],
+      g = this.h[6],
+      hh = this.h[7];
     for (let i = 0; i < 64; i++) {
       const S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
       const ch = (e & f) ^ (~e & g);

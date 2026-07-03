@@ -15,7 +15,11 @@ const SHA256_BASE = 0x400f8000;
 
 function byteswap(w: number): number {
   return (
-    (((w >>> 24) & 0xff) | ((w >>> 8) & 0xff00) | ((w << 8) & 0xff0000) | ((w << 24) & 0xff000000)) >>> 0
+    (((w >>> 24) & 0xff) |
+      ((w >>> 8) & 0xff00) |
+      ((w << 8) & 0xff0000) |
+      ((w << 24) & 0xff000000)) >>>
+    0
   );
 }
 
@@ -46,13 +50,15 @@ function digest(sha: RPSHA256, words: number[]): number[] {
 describe('RP2350 SHA-256 (real engine, FIPS 180-4 vectors)', () => {
   it('hashes "abc"', () => {
     expect(digest(new RPSHA256(new RP2350(), 'SHA256'), padBlockAbc())).toEqual([
-      0xba7816bf, 0x8f01cfea, 0x414140de, 0x5dae2223, 0xb00361a3, 0x96177a9c, 0xb410ff61, 0xf20015ad,
+      0xba7816bf, 0x8f01cfea, 0x414140de, 0x5dae2223, 0xb00361a3, 0x96177a9c, 0xb410ff61,
+      0xf20015ad,
     ]);
   });
 
   it('hashes the empty message', () => {
     expect(digest(new RPSHA256(new RP2350(), 'SHA256'), padBlockEmpty())).toEqual([
-      0xe3b0c442, 0x98fc1c14, 0x9afbf4c8, 0x996fb924, 0x27ae41e4, 0x649b934c, 0xa495991b, 0x7852b855,
+      0xe3b0c442, 0x98fc1c14, 0x9afbf4c8, 0x996fb924, 0x27ae41e4, 0x649b934c, 0xa495991b,
+      0x7852b855,
     ]);
   });
 
