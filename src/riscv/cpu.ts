@@ -503,7 +503,16 @@ export class CPU {
       case 0x323: case 0x324: case 0x325: case 0x326: case 0x327: case 0x328: case 0x329: case 0x32a: case 0x32b: case 0x32c: case 0x32d: case 0x32e: case 0x32f:
       case 0x330: case 0x331: case 0x332: case 0x333: case 0x334: case 0x335: case 0x336: case 0x337: case 0x338: case 0x339: case 0x33a: case 0x33b: case 0x33c: case 0x33d: case 0x33e: case 0x33f:
       case 0x343:
+          return;
+      // PMP configuration/address CSRs — pmpcfg0..3 (0x3a0-0x3a3) and pmpaddr0..15 (0x3b0-0x3bf).
+      // Store-and-readback only: the RP2350 Hazard3 implements PMP, but we do NOT enforce region
+      // permissions (deferred — see ROADMAP scope notes). pmpaddr8..15 were previously *dropped*
+      // (they fell in the ignore list above), so a firmware that saved/restored the upper PMP
+      // regions across a context switch read back zeros. Storing them makes the CSR file honest.
+      case 0x3a0: case 0x3a1: case 0x3a2: case 0x3a3:
+      case 0x3b0: case 0x3b1: case 0x3b2: case 0x3b3: case 0x3b4: case 0x3b5: case 0x3b6: case 0x3b7:
       case 0x3b8: case 0x3b9: case 0x3ba: case 0x3bb: case 0x3bc: case 0x3bd: case 0x3be: case 0x3bf:
+          this.csrs[csr] = value;
           return;
       case 0x340:
       case 0x341:
@@ -578,6 +587,10 @@ export class CPU {
       case 0x342:
       case 0x343:
       case 0x344:
+      // PMP CSRs — read back what was stored (permissions unenforced; see setCSR).
+      case 0x3a0: case 0x3a1: case 0x3a2: case 0x3a3:
+      case 0x3b0: case 0x3b1: case 0x3b2: case 0x3b3: case 0x3b4: case 0x3b5: case 0x3b6: case 0x3b7:
+      case 0x3b8: case 0x3b9: case 0x3ba: case 0x3bb: case 0x3bc: case 0x3bd: case 0x3be: case 0x3bf:
       case 0xbf0: return this.csrs[csr];
       case 0xbe0: return (this.meiea.slice((raw_write & 0b11111) * 16, (raw_write & 0b11111) * 16 + 16).reduceRight((acc, val) => (acc << 1) | val, 0) << 16) >>> 0;
       case 0xbe1: return (this.meipa.slice((raw_write & 0b11111) * 16, (raw_write & 0b11111) * 16 + 16).reduceRight((acc, val) => (acc << 1) | val, 0) << 16) >>> 0;

@@ -4,6 +4,7 @@ import { SimulationClock } from './clock/simulation-clock.js';
 import { CPU } from './riscv/cpu.js';
 import { GPIOPin, FUNCTION_PWM, FUNCTION_SIO, FUNCTION_PIO0, FUNCTION_PIO1, FUNCTION_PIO2 } from './gpio-pin.js';
 import { IRQ } from './irq_rp2350.js';
+import { RPAccessCtrl } from './peripherals/accessctrl.js';
 import { RPADC } from './peripherals/adc.js';
 import { RPBUSCTRL } from './peripherals/busctrl.js';
 import { RPBootRAM } from './peripherals/bootram.js';
@@ -134,7 +135,7 @@ export class RP2350 implements IRPChip {
     0x40048: new UnimplementedPeripheral(this, 'XOSC_BASE'),
     0x40050: new RP2350PLL(this, 'PLL_SYS_BASE'),
     0x40058: new UnimplementedPeripheral(this, 'PLL_USB_BASE'),
-    0x40060: new UnimplementedPeripheral(this, 'ACCESSCTRL_BASE'),
+    0x40060: new RPAccessCtrl(this, 'ACCESSCTRL_BASE'),
     0x40068: new UnimplementedPeripheral(this, 'BUSCTRL_BASE'), //TODO new RPBUSCTRL(this, 'BUSCTRL_BASE'),
     0x40070: this.uart[0],
     0x40078: this.uart[1],

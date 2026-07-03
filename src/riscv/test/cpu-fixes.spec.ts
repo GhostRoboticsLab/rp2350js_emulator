@@ -262,3 +262,17 @@ describe('Zbb/Zbs register-form ops that previously threw (ROL/ROR/BINV/ORC.B)',
     expect(cpu.registerSet.getRegisterU(3) >>> 0).toBe(0xff00ff00);
   });
 });
+
+describe('PMP CSRs (Tier 5.3 — store-and-readback; permissions unenforced)', () => {
+  // pmpaddr8..15 (0x3b8-0x3bf) used to fall in the setCSR ignore list, so a write was DROPPED and
+  // the register read back 0 — a firmware saving/restoring the upper PMP regions across a context
+  // switch would silently lose them. They are now stored like pmpaddr0..7. (We don't enforce PMP
+  // permissions; that's deferred — this only makes the CSR file honest.)
+  test('pmpaddr8 round-trips through csrrw/csrrs (was dropped -> read back 0)', () => {
+    const cpu = freshCore();
+    cpu.registerSet.setRegisterU(1, 0xdeadbeef);
+    cpu.step(0x3b809073); // csrrw x0, pmpaddr8, x1   (write pmpaddr8 = x1)
+    cpu.step(0x3b802173); // csrrs x2, pmpaddr8, x0   (read pmpaddr8 -> x2, no modify)
+    expect(cpu.registerSet.getRegisterU(2) >>> 0).toBe(0xdeadbeef);
+  });
+});
