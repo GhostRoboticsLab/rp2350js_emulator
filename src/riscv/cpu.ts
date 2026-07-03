@@ -64,6 +64,7 @@ export class CPU {
     this.next_pc = 0;
     this.branch_taken = false;
     this.did_just_jump = false;
+    this.currentMode = ExecutionMode.Mode_Machine; // Hazard3 comes out of reset in M-mode
     this.waiting = false;
     this.eventRegistered = false;
     this.reservationValid = false;
@@ -311,16 +312,18 @@ export class CPU {
     // 2. Set the MSB of MCAUSE to indicate the cause is an interrupt, or clear it to indicate an exception
     // 3. Write the detailed trap cause to the LSBs of the MCAUSE register
     this.setCSR(0x342, mcause, 0);
-    // TODO 4. Save the current privilege level to MSTATUS.MPP
-    // TODO 5. Set the privilege to M-mode (note Hazard3 does not implement S-mode)
+    // 4. Save the current privilege level to MSTATUS.MPP (Hazard3 implements M and U, no S; MPP
+    //    encodes M as 3 and U as 0). 5. The trap itself enters M-mode (done after setCSR below).
     // 6. Save the current value of MSTATUS.MIE to MSTATUS.MPIE
     let mstatus = this.getCSR(0x300, 0);
+    mstatus = (mstatus & ~(3 << 11)) | ((this.currentMode === ExecutionMode.Mode_User ? 0 : 3) << 11);
     mstatus &= ~0b10000000; mstatus |= (mstatus << 4) & 0b10000000;
     // 7. Disable interrupts by clearing MSTATUS.MIE. MIE is bit 3 (0b1000). The old `&= 1<<7`
     // kept only MPIE (bit 7) and wiped the rest of mstatus (MPP etc.); the mret path restores
     // MIE from MPIE with `&= ~0b1000`, confirming the intent is to clear only MIE here.
     mstatus &= ~(1<<3);
     this.setCSR(0x300, mstatus, 0);
+    this.currentMode = ExecutionMode.Mode_Machine; // 5. traps always execute the handler in M-mode
     // 8. Jump to the correct offset from MTVEC depending on the trap cause. Set next_pc +
     // branch_taken rather than this.pc directly: for a SYNCHRONOUS trap (ecall/ebreak, invoked
     // from inside step()) this routes through the normal commit so the handler's FIRST
@@ -1364,9 +1367,10 @@ const opcode0x73func3Table: FuncTable<I_Type> = new Map([
     let mstatus = 0;
     switch(instruction.binary) {
       case 0x30200073: // mret
-        // TODO Restore core privilege level to the value of MSTATUS.MPP
         mstatus = cpu.getCSR(0x300, 0);
-        mstatus &= ~(3<<11); // Write 0 (U-mode) to MSTATUS.MPP
+        // Restore the core privilege from MSTATUS.MPP (MPP==3 -> M, else U) before clearing it.
+        cpu.currentMode = ((mstatus >>> 11) & 3) === 3 ? ExecutionMode.Mode_Machine : ExecutionMode.Mode_User;
+        mstatus &= ~(3<<11); // Write 0 (U-mode, least privilege supported) to MSTATUS.MPP
         mstatus &= ~0b1000; mstatus |= (mstatus >>> 4) & 0b1000; // Restore MSTATUS.MIE from MSTATUS.MPIE
         mstatus |= 1<<7; // Write 1 to MSTATUS.MPIE
         cpu.setCSR(0x300, mstatus, 0);
@@ -1376,9 +1380,8 @@ const opcode0x73func3Table: FuncTable<I_Type> = new Map([
         cpu.updateMEICONTEXT_priority_restore(); // Xh3irq
         cpu.interruptsUpdated = true;
         break;
-      case 0x73: // ecall
-        const u_mode = 0; //TODO
-        const reason = u_mode?0x8:0xb;
+      case 0x73: // ecall — mcause is 8 (ecall-from-U) or 11 (ecall-from-M) per current privilege
+        const reason = cpu.currentMode === ExecutionMode.Mode_User ? 0x8 : 0xb;
         cpu.trapEntry(reason);
         break;
       case 0x100073: // ebreak

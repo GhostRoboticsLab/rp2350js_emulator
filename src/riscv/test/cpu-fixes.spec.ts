@@ -263,6 +263,46 @@ describe('Zbb/Zbs register-form ops that previously threw (ROL/ROR/BINV/ORC.B)',
   });
 });
 
+describe('Privilege M/U tracking (Tier 5.1 — MPP save/restore, ecall cause from mode)', () => {
+  const MSTATUS = 0x300;
+  const MCAUSE = 0x342;
+  const MEPC = 0x341;
+  const MRET = 0x30200073;
+  const ECALL = 0x00000073;
+
+  // Drop core0 to U-mode: set MSTATUS.MPP=0, then mret restores privilege from MPP.
+  function dropToUser(cpu: ReturnType<typeof freshCore>) {
+    cpu.setCSR(MSTATUS, cpu.getCSR(MSTATUS, 0) & ~(3 << 11), 0); // MPP <- 0 (U)
+    cpu.setCSR(MEPC, 0x20000000, 0); // mret target (not executed in this unit test)
+    cpu.step(MRET);
+  }
+
+  test('ecall from M-mode reports mcause 11 (unchanged)', () => {
+    const cpu = freshCore();
+    cpu.step(ECALL);
+    expect(cpu.getCSR(MCAUSE, 0) & 0x3f).toBe(11);
+  });
+
+  test('ecall from U-mode reports mcause 8 (was hardwired to 11)', () => {
+    const cpu = freshCore();
+    dropToUser(cpu);
+    cpu.step(ECALL);
+    expect(cpu.getCSR(MCAUSE, 0) & 0x3f).toBe(8); // pre-fix: u_mode was hardcoded 0 -> always 11
+  });
+
+  test('privilege round-trips: U -> trap(M) -> mret -> U (mcause 8 again)', () => {
+    const cpu = freshCore();
+    dropToUser(cpu);
+    cpu.step(ECALL); // U -> trap: MPP <- U(0), core enters M
+    expect((cpu.getCSR(MSTATUS, 0) >>> 11) & 3).toBe(0); // MPP saved the U privilege
+    cpu.setCSR(MEPC, 0x20000000, 0);
+    cpu.step(MRET); // handler returns: privilege restored from MPP -> U
+    cpu.step(ECALL); // ecall from U again
+    // pre-fix: privilege never tracked, so this reports 11; fixed engine round-trips back to U -> 8.
+    expect(cpu.getCSR(MCAUSE, 0) & 0x3f).toBe(8);
+  });
+});
+
 describe('PMP CSRs (Tier 5.3 — store-and-readback; permissions unenforced)', () => {
   // pmpaddr8..15 (0x3b8-0x3bf) used to fall in the setCSR ignore list, so a write was DROPPED and
   // the register read back 0 — a firmware saving/restoring the upper PMP regions across a context
