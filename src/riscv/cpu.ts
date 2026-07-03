@@ -874,6 +874,14 @@ const opcode0x13func3Table: FuncTable<I_Type> = new Map([
       const result = (rs1Value >>> 24) | ((rs1Value >>> 8) & 0xff00) | ((rs1Value << 8) & 0xff0000) | (((rs1Value & 0xff) << 24) >>> 0);
       registerSet.setRegisterU(rd, result >>> 0);
 
+    } else if (func7 === 0x14) { // orc.b (Zbb) — each byte -> 0xff if any of its bits are set
+      const v = registerSet.getRegisterU(rs1);
+      let result = 0;
+      for (let s = 0; s < 32; s += 8) {
+        if ((v >>> s) & 0xff) result |= 0xff << s;
+      }
+      registerSet.setRegisterU(rd, result >>> 0);
+
     } else throw Error(`Unknown instruction, func7: 0x${func7.toString(16)}`);
   }],
 
@@ -1037,6 +1045,15 @@ const opcode0x33func3Table: FuncTable<R_Type> = new Map([
       const index = rs2Value & 31;
       const result = rs1Value & ~(1 << index);
       registerSet.setRegister(rd, result);
+    } else if(func7 === 0x30) { // rol (Zbb) — rotate left by rs2 mod 32
+      const rs1Val = registerSet.getRegisterU(rs1);
+      const shamt = rs2Value & 31;
+      const result = shamt === 0 ? rs1Val : ((rs1Val << shamt) | (rs1Val >>> (32 - shamt))) >>> 0;
+      registerSet.setRegisterU(rd, result >>> 0);
+    } else if(func7 === 0x34) { // binv (Zbs) — invert bit (rs2 mod 32)
+      const index = rs2Value & 31;
+      const result = rs1Value ^ (1 << index);
+      registerSet.setRegister(rd, result);
     } else throw Error(`Unknown instruction, func7: 0x${func7.toString(16)}`);
   }],
 
@@ -1158,6 +1175,11 @@ const opcode0x33func3Table: FuncTable<R_Type> = new Map([
         registerSet.setRegister(rd, result);
       }
       cpu.cycles += 17;
+    } else if (func7 === 0x30) { // ror (Zbb) — rotate right by rs2 mod 32
+      const rs1Val = registerSet.getRegisterU(rs1);
+      const shamt = rs2Value & 31;
+      const result = shamt === 0 ? rs1Val : ((rs1Val >>> shamt) | (rs1Val << (32 - shamt))) >>> 0;
+      registerSet.setRegisterU(rd, result >>> 0);
     } else throw Error(`Unknown instruction, func7: 0x${func7.toString(16)}`);
 
   }],

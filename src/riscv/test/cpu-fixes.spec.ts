@@ -223,3 +223,42 @@ describe('RV32A atomics (only amoswap/amoor/amoand existed; the rest aborted the
     expect(cpu.chip.readUint32(ADDR) >>> 0).toBe(222); // memory unchanged
   });
 });
+
+describe('Zbb/Zbs register-form ops that previously threw (ROL/ROR/BINV/ORC.B)', () => {
+  // R-type (opcode 0x33) and I-type (opcode 0x13) encoders.
+  const rop = (func7: number, func3: number, rd: number, rs1: number, rs2: number) =>
+    ((func7 << 25) | (rs2 << 20) | (rs1 << 15) | (func3 << 12) | (rd << 7) | 0x33) >>> 0;
+  const iop = (imm12: number, func3: number, rd: number, rs1: number) =>
+    ((imm12 << 20) | (rs1 << 15) | (func3 << 12) | (rd << 7) | 0x13) >>> 0;
+
+  test('rol rotates left by rs2 mod 32', () => {
+    const cpu = freshCore();
+    cpu.registerSet.setRegisterU(1, 0x80000001);
+    cpu.registerSet.setRegisterU(2, 1);
+    cpu.step(rop(0x30, 0x1, 3, 1, 2)); // rol x3, x1, x2 — previously threw func7 0x30
+    expect(cpu.registerSet.getRegisterU(3) >>> 0).toBe(0x00000003);
+  });
+
+  test('ror rotates right by rs2 mod 32', () => {
+    const cpu = freshCore();
+    cpu.registerSet.setRegisterU(1, 0x00000003);
+    cpu.registerSet.setRegisterU(2, 1);
+    cpu.step(rop(0x30, 0x5, 3, 1, 2)); // ror x3, x1, x2
+    expect(cpu.registerSet.getRegisterU(3) >>> 0).toBe(0x80000001);
+  });
+
+  test('binv (register) inverts bit rs2 mod 32', () => {
+    const cpu = freshCore();
+    cpu.registerSet.setRegisterU(1, 0x00000000);
+    cpu.registerSet.setRegisterU(2, 5);
+    cpu.step(rop(0x34, 0x1, 3, 1, 2)); // binv x3, x1, x2
+    expect(cpu.registerSet.getRegisterU(3) >>> 0).toBe(1 << 5);
+  });
+
+  test('orc.b sets each byte to 0xff if any of its bits are set', () => {
+    const cpu = freshCore();
+    cpu.registerSet.setRegisterU(1, 0x01008000);
+    cpu.step(iop((0x14 << 5) | 0x07, 0x5, 3, 1)); // orc.b x3, x1
+    expect(cpu.registerSet.getRegisterU(3) >>> 0).toBe(0xff00ff00);
+  });
+});
