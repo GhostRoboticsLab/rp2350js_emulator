@@ -22,6 +22,7 @@ import { RP2350PLL } from './peripherals/pll_rp2350.js';
 import { RPReset } from './peripherals/reset.js';
 import { RP2040RTC } from './peripherals/rtc.js';
 import { RPSPI } from './peripherals/spi.js';
+import { RPSHA256 } from './peripherals/sha256.js';
 import { RP2350SysCfg } from './peripherals/syscfg_rp2350.js';
 import { RP2350SysInfo } from './peripherals/sysinfo_rp2350.js';
 import { RPTBMAN } from './peripherals/tbman.js';
@@ -154,6 +155,7 @@ export class RP2350 implements IRPChip {
     //0x400xx: new RP2040RTC(this, 'RTC_BASE'),
     0x400e0: new RPBootRAM(this, 'BOOTRAM_BASE'),
     0x400e8: new UnimplementedPeripheral(this, 'ROSC_BASE'),
+    0x400f8: new RPSHA256(this, 'SHA256_BASE'),
     0x40100: new RPPOWMAN(this, 'POWMAN_BASE'),
     0x40108: new RPTicks(this, 'TICKS_BASE'),
     0x40120: this.otp,
