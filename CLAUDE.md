@@ -15,7 +15,7 @@ RISC-V core corrected). See `ROADMAP.md` for the defect log and deferred work.
 
 ```bash
 npm install                              # Node >= 18
-npm test                                 # vitest run — 377 pass, 0 skipped. hello_timer ~22s (250M-step firmware run)
+npm test                                 # vitest run — 379 pass, 0 skipped. hello_timer ~22s (250M-step firmware run)
 npm run test:watch                       # vitest watch mode
 npx vitest run src/riscv                 # RISC-V correctness suite only
 npx vitest run src/rp2350.spec.ts        # RP2350 firmware integration tests only
@@ -54,7 +54,10 @@ parameterization is also a candidate upstream PR to Wokwi (see end of `ROADMAP.m
 
 - **RP2040:** `src/cortex-m0-core.ts` — ARM Thumb. One core.
 - **RP2350:** `src/riscv/cpu.ts` — Hazard3 RISC-V, dual-core (`core0`, `core1`). `src/riscv/rv32c.ts`
-  decompresses compressed instructions; `src/riscv/Assembler/` is a test-only RISC-V assembler.
+  decompresses compressed instructions; `src/riscv/Assembler/` is a test-only RISC-V assembler. By
+  default both cores run from reset; for faithful SDK bring-up call `rp2350.holdCore1ForLaunch()` — core1
+  parks in the bootrom wait-loop until core0's `multicore_launch_core1` FIFO handshake releases it (see
+  the dual-core `ghostshow_mc` gate in `src/ghostshow.spec.ts`).
 
 ### Two *different* execution/stepping models — do not assume they share a driver
 

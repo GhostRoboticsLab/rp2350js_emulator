@@ -151,6 +151,13 @@ the ghost. Confirmed rendering in colour in the browser. Suite: **377 pass** (wa
 - **Tier 2.1/2.2** ✅ `npm run start:rp2350` CLI + family-id-aware UF2 loader (routes flash/SRAM, flags
   Arm images — the Tier 5.3 loud-Arm-rejection). Verified booting ghostshow .hex and .uf2.
 - **Tier 4.3** ✅ Inter-core DOORBELL + SIO_IRQ_BELL (multicore_doorbell_*).
+- **Tier 5.2** ✅ PSM/FIFO **core1 launch** — `holdCore1ForLaunch()` parks core1 in the bootrom
+  wait-loop; RPSIO emulates it over the real cross-wired FIFOs, echoing core0's
+  `{0,0,1,vtor,sp,entry}` handshake, then stepCores() sets core1's pc/sp/mtvec and releases it.
+  **Verified end-to-end: the dual-core ghostshow twin** — core1 runs the FPU plasma field
+  (`field_core1_entry`) while core0 renders; ghost decodes to 24 colour pixels. Rebuilt a dual-core
+  sim firmware (`ghostshow_mc`, `-DGHOSTSHOW_SIM_MC=1`) with a `busy_wait` frame pace (the WS2812
+  reset gap `field_step` used to provide). Live in the web twin as **"Carrier (full) · dual-core"**.
 - Added the first `*_rp2350` peripheral specs (watchdog, pwm) — starts closing Tier 4.22's gap.
 
 ### Deferred (with rationale — captured as todos, not silently dropped)
@@ -167,8 +174,7 @@ the ghost. Confirmed rendering in colour in the browser. Suite: **377 pass** (wa
 - **Tier 4.1/4.2/4.4/4.5 (OTP, POWMAN AON timer, TICKS, SHA-256/TRNG)** ⏸ — register-model stubs to
   stop unmapped-throw / 0xffffffff-lie; not exercised by the ghostshow twin, so staged behind the
   higher-value ISA/timing work.
-- **Tier 5.1/5.2/5.3-rest (privilege M/U, PSM core1 reset-hold + real FIFO launch, PMP CSR storage)** ⏸.
-  5.2 would unblock dual-core ghostshow in the sim (a great demo) but is a larger, riskier change.
+- **Tier 5.1 / 5.3-rest (privilege M/U, PMP CSR storage)** ⏸. (5.2 core1 launch is now **done** — see above.)
 - **Tier 5.4 (Arm Cortex-M33 core)** ⏸ — out of scope (multi-month; M0+ not reusable). Documented as
   a hard boundary; the UF2 loader now rejects Arm images loudly.
 

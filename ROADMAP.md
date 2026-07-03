@@ -112,6 +112,7 @@ and in the browser digital twin. See `plan.md` for the full tiered record. Highl
 | RV32I/Zicsr | `wfi` decoded (idle loops parked, not aborted); mcycle/minstret/cycle/instret wired (read 0 before) | ✅ |
 | Zbb/Zbs | register-form `rol`/`ror`/`binv` + `orc.b` (threw) | ✅ |
 | SIO | FIFO_ST write-1-to-clear (`|`→`&`); RP2350 inter-core **DOORBELL** + SIO_IRQ_BELL | ✅ |
+| Multicore | **PSM/FIFO core1 launch** (`multicore_launch_core1`) — dual-core ghostshow twin (core1 runs the FPU field, core0 renders) | ✅ |
 | Peripherals | watchdog enabled (1 MHz tick, working SCRATCH); PWM 12 slices + fixed EN read-back | ✅ |
 | Tooling | `npm run start:rp2350` CLI + family-id-aware UF2 loader (routes flash/SRAM; **rejects Arm images loudly**) | ✅ |
 
@@ -123,8 +124,9 @@ and in the browser digital twin. See `plan.md` for the full tiered record. Highl
 - **`clk_sys` is a fixed 125 MHz**, not PLL-driven; the RP2350 SDK default is 150 MHz. Absolute
   peripheral rates are off until per-firmware PLL-driven clocking lands (deferred to avoid shifting the
   `hello_timer` gate).
-- **Boot flow is bypassed** (PC jumped to the image entry; core1 not held in reset via PSM, so the
-  `multicore_launch_core1` FIFO handshake isn't exercised); OTP/secure-boot/TICKS gating absent.
+- **Cold-boot ROM sequence is bypassed** (PC is set to the image entry rather than run through the
+  bootrom's image parse/secure-boot); OTP/secure-boot/TICKS gating absent. (Core1 launch itself *is*
+  now modelled: `holdCore1ForLaunch()` + the SIO FIFO handshake bring core1 up faithfully.)
 - **Leader/follower dual-core stepping** is core0-favoured quantised lockstep — a green multicore test
   does **not** prove race-freedom.
 
